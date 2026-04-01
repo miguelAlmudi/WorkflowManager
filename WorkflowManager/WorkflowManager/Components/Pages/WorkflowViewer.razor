@@ -1,16 +1,18 @@
 ﻿@page "/workflow-viewer"
 @rendermode InteractiveServer
 @using System.Text.Json
+@using System.Linq
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
 
 <PageTitle>Workflow Viewer</PageTitle>
 
 <div class="wf-page">
     <div class="wf-header">
         <div>
-            <h3>Workflow Viewer</h3>
+            <h3>Workflow Graph Viewer</h3>
             <p class="wf-subtitle">
-                Carregue um arquivo JSON do Elsa para visualizar atividades, elementos e conexões.
+                Carregue um workflow JSON do Elsa para visualizar o fluxo como grafo e mover os nós com o mouse.
             </p>
         </div>
     </div>
@@ -50,163 +52,137 @@
             </div>
 
             <div class="wf-summary-card">
-                <div class="wf-summary-label">Atividades</div>
-                <div class="wf-summary-value">@Workflow.Activities.Count</div>
+                <div class="wf-summary-label">Nós</div>
+                <div class="wf-summary-value">@GraphNodes.Count</div>
             </div>
 
             <div class="wf-summary-card">
                 <div class="wf-summary-label">Conexões</div>
-                <div class="wf-summary-value">@Workflow.Connections.Count</div>
+                <div class="wf-summary-value">@GraphEdges.Count</div>
             </div>
         </div>
 
-        <div class="wf-section">
-            <div class="wf-section-title">Container raiz</div>
-
-            <div class="wf-root-card">
-                <div class="wf-root-type">@DisplayOrDash(Workflow.RootType)</div>
-                <div class="wf-root-name">@DisplayOrDash(Workflow.RootDisplayName)</div>
-                <div class="wf-root-id">ID: @DisplayOrDash(Workflow.RootId)</div>
-            </div>
+        <div class="wf-actions">
+            <button class="btn btn-outline-primary btn-sm" @onclick="ResetLayout">Reorganizar layout</button>
         </div>
 
-        @if (Workflow.Elements.Any())
+        @if (SelectedNode is not null)
         {
             <div class="wf-section">
-                <div class="wf-section-title">Elementos do workflow</div>
+                <div class="wf-section-title">Nó selecionado</div>
 
-                @foreach (var group in Workflow.Elements.GroupBy(x => x.Category))
-                {
-                    <div class="wf-element-group">
-                        <div class="wf-element-group-title">@group.Key</div>
+                <div class="wf-selected-card">
+                    <div class="wf-selected-name">@SelectedNode.Label</div>
+                    <div class="wf-selected-type">@SelectedNode.Type</div>
+                    <div class="wf-selected-id">ID: @SelectedNode.Id</div>
 
-                        <div class="wf-element-grid">
-                            @foreach (var item in group)
+                    @if (SelectedNode.Highlights.Any())
+                    {
+                        <div class="wf-selected-highlights">
+                            @foreach (var item in SelectedNode.Highlights)
                             {
-                                <div class="wf-element-card">
-                                    <div class="wf-element-name">@DisplayOrDash(item.Name)</div>
-                                    @if (!string.IsNullOrWhiteSpace(item.Type))
-                                    {
-                                        <div class="wf-element-type">@item.Type</div>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(item.Value))
-                                    {
-                                        <div class="wf-element-value">@item.Value</div>
-                                    }
+                                <div class="wf-selected-highlight">
+                                    <strong>@item.Key:</strong> @item.Value
                                 </div>
                             }
                         </div>
-                    </div>
-                }
+                    }
+                </div>
             </div>
         }
 
         <div class="wf-section">
-            <div class="wf-section-title">Fluxo visual das atividades</div>
+            <div class="wf-section-title">Grafo interativo</div>
             <div class="wf-flow-note">
-                A lista abaixo mostra as atividades encontradas no JSON. Em workflows com branches, o bloco de conexões logo abaixo é o que melhor representa o fluxo entre elas.
+                Clique em um nó para selecionar. Segure o botão esquerdo do mouse sobre ele para mover.
             </div>
 
-            @if (!Workflow.Activities.Any())
-            {
-                <div class="wf-empty">
-                    Nenhuma atividade foi encontrada dentro do JSON.
-                </div>
-            }
-            else
-            {
-                <div class="wf-flow-list">
-                    @for (var i = 0; i < Workflow.Activities.Count; i++)
-                    {
-                        var activity = Workflow.Activities[i];
+            <div class="graph-viewport">
+                <div class="graph-canvas"
+                     style="@($"width:{CanvasWidth}px;height:{CanvasHeight}px;")"
+                     @onmousemove="OnCanvasMouseMove"
+                     @onmouseup="OnCanvasMouseUp"
+                     @onmouseleave="OnCanvasMouseUp">
 
-                        <div class="wf-flow-item">
-                            @if (i > 0)
+                    <svg class="graph-svg" width="@CanvasWidth" height="@CanvasHeight">
+                        <defs>
+                            <marker id="arrowhead" markerWidth="10" markerHeight="7"
+                                    refX="9" refY="3.5" orient="auto">
+                                <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+                            </marker>
+                        </defs>
+
+                        @foreach (var edge in GraphEdges)
+                        {
+                            var source = FindNode(edge.SourceId);
+                            var target = FindNode(edge.TargetId);
+
+                            if (source is null || target is null)
+                                continue;
+
+                            var x1 = source.X + NodeWidth;
+                            var y1 = source.Y + (NodeHeight / 2.0);
+                            var x2 = target.X;
+                            var y2 = target.Y + (NodeHeight / 2.0);
+                            var labelX = (x1 + x2) / 2.0;
+                            var labelY = ((y1 + y2) / 2.0) - 8.0;
+
+                            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                                  stroke="#94a3b8" stroke-width="2.5"
+                                  marker-end="url(#arrowhead)" />                                                              
+                        }
+                    </svg>
+
+                    @foreach (var edge in GraphEdges)
+                    {
+                        var source = FindNode(edge.SourceId);
+                        var target = FindNode(edge.TargetId);
+
+                        if (source is null || target is null || string.IsNullOrWhiteSpace(edge.Outcome))
+                            continue;
+
+                        var x1 = source.X + NodeWidth;
+                        var y1 = source.Y + (NodeHeight / 2.0);
+                        var x2 = target.X;
+                        var y2 = target.Y + (NodeHeight / 2.0);
+
+                        var labelX = ((x1 + x2) / 2.0) - 40.0;
+                        var labelY = ((y1 + y2) / 2.0) - 12.0;
+
+                        <div class="graph-edge-label"
+                             style="@($"left:{labelX}px; top:{labelY}px;")">
+                            @edge.Outcome
+                        </div>
+                    }
+
+                    @foreach (var node in GraphNodes)
+                    {
+                        <div class="graph-node @GetNodeCssClass(node) @(SelectedNodeId == node.Id ? "selected" : "") @(_draggingNodeId == node.Id ? "dragging" : "")"
+                             style="@NodeStyle(node)"
+                             @onclick="() => SelectNode(node)"
+                             @onmousedown="(e) => StartDrag(node, e)"
+                             @onmousedown:preventDefault="true">
+
+                            <div class="graph-node-title">@node.Label</div>
+                            <div class="graph-node-type">@node.Type</div>
+                            <div class="graph-node-id">@node.Id</div>
+
+                            @if (node.Highlights.Any())
                             {
-                                <div class="wf-arrow">↓</div>
+                                <div class="graph-node-highlights">
+                                    @foreach (var item in node.Highlights.Take(3))
+                                    {
+                                        <div class="graph-node-highlight">
+                                            <span class="graph-node-highlight-key">@item.Key:</span>
+                                            <span class="graph-node-highlight-value">@item.Value</span>
+                                        </div>
+                                    }
+                                </div>
                             }
-
-                            <div class="wf-node @GetNodeCssClass(activity)">
-                                <div class="wf-node-top">
-                                    <div>
-                                        <div class="wf-node-title">@activity.DisplayName</div>
-                                        <div class="wf-node-type">@activity.ShortType</div>
-                                    </div>
-                                    <div class="wf-node-badges">
-                                        <span class="wf-badge">ID: @activity.Id</span>
-                                        @if (!string.IsNullOrWhiteSpace(activity.SourceProperty))
-                                        {
-                                            <span class="wf-badge wf-badge-soft">@activity.SourceProperty</span>
-                                        }
-                                    </div>
-                                </div>
-
-                                @if (!string.IsNullOrWhiteSpace(activity.Description))
-                                {
-                                    <div class="wf-node-description">@activity.Description</div>
-                                }
-
-                                @if (activity.Highlights.Any())
-                                {
-                                    <div class="wf-highlight-grid">
-                                        @foreach (var item in activity.Highlights)
-                                        {
-                                            <div class="wf-highlight-item">
-                                                <span class="wf-highlight-key">@item.Key:</span>
-                                                <span class="wf-highlight-value">@item.Value</span>
-                                            </div>
-                                        }
-                                    </div>
-                                }
-
-                                <div class="wf-node-footer">
-                                    Profundidade estrutural: @activity.Depth
-                                </div>
-                            </div>
                         </div>
                     }
                 </div>
-            }
-        </div>
-
-        <div class="wf-section">
-            <div class="wf-section-title">Conexões detectadas</div>
-
-            @if (!Workflow.Connections.Any())
-            {
-                <div class="wf-empty">
-                    Nenhuma conexão explícita foi encontrada. Se o JSON não trouxer as conexões, o viewer ainda mostra a estrutura das atividades.
-                </div>
-            }
-            else
-            {
-                <div class="wf-connection-grid">
-                    @foreach (var connection in Workflow.Connections)
-                    {
-                        <div class="wf-connection-card">
-                            <div class="wf-connection-side">
-                                <div class="wf-connection-label">Origem</div>
-                                <div class="wf-connection-value">@connection.SourceLabel</div>
-                                <div class="wf-connection-id">@connection.SourceId</div>
-                            </div>
-
-                            <div class="wf-connection-middle">
-                                <div class="wf-connection-arrow">→</div>
-                                @if (!string.IsNullOrWhiteSpace(connection.Outcome))
-                                {
-                                    <div class="wf-connection-outcome">@connection.Outcome</div>
-                                }
-                            </div>
-
-                            <div class="wf-connection-side">
-                                <div class="wf-connection-label">Destino</div>
-                                <div class="wf-connection-value">@connection.TargetLabel</div>
-                                <div class="wf-connection-id">@connection.TargetId</div>
-                            </div>
-                        </div>
-                    }
-                </div>
-            }
+            </div>
         </div>
 
         <div class="wf-section">
@@ -221,7 +197,7 @@
 
 <style>
     .wf-page {
-        max-width: 1300px;
+        max-width: 1500px;
         margin: 0 auto;
         padding: 24px;
     }
@@ -262,15 +238,12 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 14px;
-        margin-bottom: 22px;
+        margin-bottom: 18px;
     }
 
     .wf-summary-card,
     .wf-section,
-    .wf-root-card,
-    .wf-element-card,
-    .wf-connection-card,
-    .wf-node {
+    .wf-selected-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 16px;
@@ -293,6 +266,10 @@
         word-break: break-word;
     }
 
+    .wf-actions {
+        margin-bottom: 18px;
+    }
+
     .wf-section {
         padding: 18px;
         margin-bottom: 20px;
@@ -301,259 +278,174 @@
     .wf-section-title {
         font-size: 1.1rem;
         font-weight: 700;
-        margin-bottom: 14px;
-    }
-
-    .wf-root-card {
-        padding: 18px;
-        border-left: 6px solid #0f766e;
-        background: linear-gradient(135deg, #ecfeff, #f8fafc);
-    }
-
-    .wf-root-type {
-        font-size: 0.85rem;
-        font-weight: 700;
-        color: #0f766e;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .wf-root-name {
-        font-size: 1.15rem;
-        font-weight: 700;
-        margin-top: 8px;
-    }
-
-    .wf-root-id {
-        color: #475569;
-        margin-top: 6px;
-    }
-
-    .wf-element-group + .wf-element-group {
-        margin-top: 18px;
-    }
-
-    .wf-element-group-title {
-        font-weight: 700;
-        margin-bottom: 10px;
-        color: #334155;
-    }
-
-    .wf-element-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 12px;
-    }
-
-    .wf-element-card {
-        padding: 14px;
-    }
-
-    .wf-element-name {
-        font-weight: 700;
-        margin-bottom: 6px;
-    }
-
-    .wf-element-type {
-        font-size: 0.85rem;
-        color: #0369a1;
-        margin-bottom: 6px;
-    }
-
-    .wf-element-value {
-        font-size: 0.9rem;
-        color: #475569;
-        white-space: pre-wrap;
-        word-break: break-word;
+        margin-bottom: 12px;
     }
 
     .wf-flow-note {
         color: #64748b;
-        margin-bottom: 16px;
+        margin-bottom: 14px;
     }
 
-    .wf-flow-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .wf-flow-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
-
-    .wf-arrow {
-        font-size: 1.6rem;
-        color: #94a3b8;
-        margin: 2px 0 8px 0;
-    }
-
-    .wf-node {
-        width: min(100%, 880px);
+    .wf-selected-card {
         padding: 16px;
         border-left: 6px solid #2563eb;
     }
 
-    .wf-node-control {
-        border-left-color: #7c3aed;
-    }
-
-    .wf-node-data {
-        border-left-color: #2563eb;
-    }
-
-    .wf-node-http {
-        border-left-color: #0891b2;
-    }
-
-    .wf-node-blocking {
-        border-left-color: #ea580c;
-    }
-
-    .wf-node-generic {
-        border-left-color: #475569;
-    }
-
-    .wf-node-top {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        align-items: flex-start;
-        flex-wrap: wrap;
-    }
-
-    .wf-node-title {
-        font-size: 1.05rem;
+    .wf-selected-name {
+        font-size: 1.1rem;
         font-weight: 700;
     }
 
-    .wf-node-type {
+    .wf-selected-type {
         color: #64748b;
         margin-top: 4px;
     }
 
-    .wf-node-badges {
-        display: flex;
-        flex-wrap: wrap;
+    .wf-selected-id {
+        color: #475569;
+        margin-top: 6px;
+        font-size: 0.9rem;
+        word-break: break-word;
+    }
+
+    .wf-selected-highlights {
+        margin-top: 12px;
+        display: grid;
         gap: 8px;
     }
 
-    .wf-badge {
-        background: #eff6ff;
-        color: #1d4ed8;
-        border: 1px solid #bfdbfe;
-        border-radius: 999px;
-        padding: 4px 10px;
-        font-size: 0.8rem;
-        font-weight: 700;
-    }
-
-    .wf-badge-soft {
-        background: #f8fafc;
-        color: #475569;
-        border-color: #cbd5e1;
-    }
-
-    .wf-node-description {
-        margin-top: 10px;
-        color: #475569;
-    }
-
-    .wf-highlight-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 10px;
-        margin-top: 14px;
-    }
-
-    .wf-highlight-item {
+    .wf-selected-highlight {
         background: #f8fafc;
         border: 1px solid #e2e8f0;
-        border-radius: 12px;
+        border-radius: 10px;
         padding: 10px 12px;
-    }
-
-    .wf-highlight-key {
-        font-weight: 700;
-        color: #334155;
-        margin-right: 6px;
-    }
-
-    .wf-highlight-value {
-        color: #475569;
         word-break: break-word;
     }
 
-    .wf-node-footer {
-        margin-top: 14px;
-        padding-top: 10px;
-        border-top: 1px solid #e2e8f0;
-        color: #64748b;
-        font-size: 0.9rem;
-    }
-
-    .wf-connection-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-        gap: 12px;
-    }
-
-    .wf-connection-card {
+    .graph-viewport {
+        overflow: auto;
+        border: 1px solid #cbd5e1;
+        border-radius: 18px;
+        background: linear-gradient(180deg, #f8fafc, #eef2ff);
         padding: 14px;
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        gap: 12px;
-        align-items: center;
     }
 
-    .wf-connection-label {
-        font-size: 0.8rem;
-        color: #64748b;
-        margin-bottom: 4px;
+    .graph-canvas {
+        position: relative;
+        min-width: 1000px;
+        min-height: 700px;
+        background-image:
+            linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+        background-size: 24px 24px;
+        border-radius: 16px;
     }
 
-    .wf-connection-value {
+    .graph-svg {
+        position: absolute;
+        left: 0;
+        top: 0;
+        pointer-events: none;
+        overflow: visible;
+    }
+
+    .graph-node {
+        position: absolute;
+        width: 240px;
+        min-height: 140px;
+        padding: 14px;
+        border-radius: 16px;
+        background: #ffffff;
+        border: 2px solid #cbd5e1;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        cursor: grab;
+        user-select: none;
+        transition: box-shadow 0.15s ease, transform 0.15s ease;
+    }
+
+    .graph-node:hover {
+        box-shadow: 0 16px 28px rgba(15, 23, 42, 0.12);
+        transform: translateY(-1px);
+    }
+
+    .graph-node.dragging {
+        cursor: grabbing;
+        box-shadow: 0 18px 36px rgba(37, 99, 235, 0.20);
+        z-index: 50;
+    }
+
+    .graph-node.selected {
+        border-color: #2563eb;
+        box-shadow: 0 18px 36px rgba(37, 99, 235, 0.18);
+    }
+
+    .graph-node-root {
+        border-left: 8px solid #0f766e;
+        background: linear-gradient(135deg, #ecfeff, #ffffff);
+    }
+
+    .graph-node-control {
+        border-left: 8px solid #7c3aed;
+    }
+
+    .graph-node-http {
+        border-left: 8px solid #0891b2;
+    }
+
+    .graph-node-blocking {
+        border-left: 8px solid #ea580c;
+    }
+
+    .graph-node-data {
+        border-left: 8px solid #2563eb;
+    }
+
+    .graph-node-generic {
+        border-left: 8px solid #475569;
+    }
+
+    .graph-node-title {
+        font-size: 1rem;
         font-weight: 700;
-        word-break: break-word;
+        margin-bottom: 4px;
+        line-height: 1.2;
     }
 
-    .wf-connection-id {
+    .graph-node-type {
         color: #64748b;
-        font-size: 0.85rem;
-        margin-top: 4px;
+        font-size: 0.92rem;
+        margin-bottom: 6px;
+    }
+
+    .graph-node-id {
+        color: #94a3b8;
+        font-size: 0.78rem;
+        margin-bottom: 10px;
         word-break: break-word;
     }
 
-    .wf-connection-middle {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+    .graph-node-highlights {
+        display: grid;
         gap: 6px;
     }
 
-    .wf-connection-arrow {
-        font-size: 1.4rem;
-        color: #2563eb;
-        font-weight: 700;
-    }
-
-    .wf-connection-outcome {
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #7c3aed;
-        background: #f5f3ff;
-        border: 1px solid #ddd6fe;
-        border-radius: 999px;
-        padding: 4px 8px;
-    }
-
-    .wf-empty {
-        padding: 16px;
-        border-radius: 12px;
+    .graph-node-highlight {
         background: #f8fafc;
-        border: 1px dashed #cbd5e1;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 6px 8px;
+        font-size: 0.82rem;
+        line-height: 1.25;
+        word-break: break-word;
+    }
+
+    .graph-node-highlight-key {
+        font-weight: 700;
+        color: #334155;
+        margin-right: 4px;
+    }
+
+    .graph-node-highlight-value {
         color: #475569;
     }
 
@@ -574,15 +466,51 @@
         white-space: pre-wrap;
         word-break: break-word;
     }
+
+    .graph-edge-label {
+        position: absolute;
+        min-width: 80px;
+        max-width: 140px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #7c3aed;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: center;
+        pointer-events: none;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+        z-index: 2;
+    }
 </style>
 
 @code {
     private const long MaxFileSize = 5 * 1024 * 1024;
+    private const double NodeWidth = 240;
+    private const double NodeHeight = 140;
+    private const double HorizontalGap = 130;
+    private const double VerticalGap = 40;
+    private const double CanvasPadding = 60;
 
     private string? StatusMessage;
     private bool HasError;
     private string? FormattedJson;
     private WorkflowViewModel? Workflow;
+
+    private List<GraphNode> GraphNodes { get; set; } = new();
+    private List<GraphEdge> GraphEdges { get; set; } = new();
+
+    private string? SelectedNodeId;
+    private string? _draggingNodeId;
+    private double _lastMouseX;
+    private double _lastMouseY;
+
+    private double CanvasWidth = 1600;
+    private double CanvasHeight = 900;
+
+    private GraphNode? SelectedNode => GraphNodes.FirstOrDefault(x => x.Id == SelectedNodeId);
 
     private async Task LoadWorkflowFile(InputFileChangeEventArgs e)
     {
@@ -611,6 +539,7 @@
             });
 
             Workflow = BuildWorkflowViewModel(document.RootElement);
+            BuildGraphLayout();
 
             HasError = false;
             StatusMessage = "Workflow carregado com sucesso.";
@@ -632,6 +561,183 @@
         }
     }
 
+    private void BuildGraphLayout()
+    {
+        GraphNodes.Clear();
+        GraphEdges.Clear();
+        SelectedNodeId = null;
+
+        if (Workflow is null)
+            return;
+
+        var rootId = Workflow.RootId ?? "root";
+        var rootLabel = Workflow.RootDisplayName ?? Workflow.RootType ?? "Root";
+        var rootType = Workflow.RootType ?? "Root";
+
+        GraphNodes.Add(new GraphNode
+        {
+            Id = rootId,
+            Label = rootLabel,
+            Type = rootType,
+            Depth = 0,
+            X = CanvasPadding,
+            Y = CanvasPadding,
+            Kind = "root",
+            Highlights = new List<ActivityHighlight>()
+        });
+
+        foreach (var activity in Workflow.Activities)
+        {
+            GraphNodes.Add(new GraphNode
+            {
+                Id = activity.Id,
+                Label = activity.DisplayName,
+                Type = activity.ShortType,
+                Depth = Math.Max(activity.Depth, 1),
+                Kind = ClassifyNodeKind(activity.ShortType),
+                Highlights = activity.Highlights
+            });
+        }
+
+        var nodeMap = GraphNodes.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var connection in Workflow.Connections)
+        {
+            if (!nodeMap.ContainsKey(connection.SourceId) || !nodeMap.ContainsKey(connection.TargetId))
+                continue;
+
+            GraphEdges.Add(new GraphEdge
+            {
+                SourceId = connection.SourceId,
+                TargetId = connection.TargetId,
+                Outcome = connection.Outcome
+            });
+        }
+
+        AutoArrangeNodes();
+
+        if (GraphNodes.Any())
+            SelectedNodeId = GraphNodes[0].Id;
+    }
+
+    private void AutoArrangeNodes()
+    {
+        var levels = GraphNodes
+            .GroupBy(x => x.Depth)
+            .OrderBy(x => x.Key)
+            .ToList();
+
+        foreach (var level in levels)
+        {
+            var nodes = level.ToList();
+
+            for (var i = 0; i < nodes.Count; i++)
+            {
+                var node = nodes[i];
+                node.X = CanvasPadding + level.Key * (NodeWidth + HorizontalGap);
+                node.Y = CanvasPadding + i * (NodeHeight + VerticalGap);
+            }
+        }
+
+        RecalculateCanvasSize();
+    }
+
+    private void RecalculateCanvasSize()
+    {
+        if (!GraphNodes.Any())
+        {
+            CanvasWidth = 1600;
+            CanvasHeight = 900;
+            return;
+        }
+
+        CanvasWidth = Math.Max(1600, GraphNodes.Max(x => x.X) + NodeWidth + CanvasPadding);
+        CanvasHeight = Math.Max(900, GraphNodes.Max(x => x.Y) + NodeHeight + CanvasPadding);
+    }
+
+    private void ResetLayout()
+    {
+        AutoArrangeNodes();
+    }
+
+    private void SelectNode(GraphNode node)
+    {
+        SelectedNodeId = node.Id;
+    }
+
+    private void StartDrag(GraphNode node, MouseEventArgs e)
+    {
+        SelectedNodeId = node.Id;
+        _draggingNodeId = node.Id;
+        _lastMouseX = e.ClientX;
+        _lastMouseY = e.ClientY;
+    }
+
+    private void OnCanvasMouseMove(MouseEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_draggingNodeId))
+            return;
+
+        var node = GraphNodes.FirstOrDefault(x => x.Id == _draggingNodeId);
+
+        if (node is null)
+            return;
+
+        var dx = e.ClientX - _lastMouseX;
+        var dy = e.ClientY - _lastMouseY;
+
+        node.X = Math.Max(0, node.X + dx);
+        node.Y = Math.Max(0, node.Y + dy);
+
+        _lastMouseX = e.ClientX;
+        _lastMouseY = e.ClientY;
+
+        RecalculateCanvasSize();
+    }
+
+    private void OnCanvasMouseUp(MouseEventArgs _)
+    {
+        _draggingNodeId = null;
+    }
+
+    private string NodeStyle(GraphNode node)
+        => $"left:{node.X}px; top:{node.Y}px; width:{NodeWidth}px; min-height:{NodeHeight}px;";
+
+    private GraphNode? FindNode(string nodeId)
+        => GraphNodes.FirstOrDefault(x => x.Id.Equals(nodeId, StringComparison.OrdinalIgnoreCase));
+
+    private string GetNodeCssClass(GraphNode node)
+        => node.Kind switch
+        {
+            "root" => "graph-node-root",
+            "control" => "graph-node-control",
+            "http" => "graph-node-http",
+            "blocking" => "graph-node-blocking",
+            "data" => "graph-node-data",
+            _ => "graph-node-generic"
+        };
+
+    private static string ClassifyNodeKind(string? shortType)
+    {
+        var type = shortType?.ToLowerInvariant() ?? string.Empty;
+
+        if (type.Contains("flowchart") || type.Contains("sequence") || type.Contains("decision") ||
+            type.Contains("if") || type.Contains("switch") || type.Contains("while") ||
+            type.Contains("for") || type.Contains("fork") || type.Contains("parallel"))
+            return "control";
+
+        if (type.Contains("http"))
+            return "http";
+
+        if (type.Contains("delay") || type.Contains("timer") || type.Contains("event") || type.Contains("signal"))
+            return "blocking";
+
+        if (type.Contains("write") || type.Contains("read") || type.Contains("variable") || type.Contains("set"))
+            return "data";
+
+        return "generic";
+    }
+
     private WorkflowViewModel BuildWorkflowViewModel(JsonElement workflowElement)
     {
         var model = new WorkflowViewModel
@@ -640,12 +746,6 @@
             DefinitionId = GetString(workflowElement, "definitionId"),
             Name = GetString(workflowElement, "name")
         };
-
-        model.Elements.AddRange(ExtractElements(workflowElement, "variables", "Variáveis"));
-        model.Elements.AddRange(ExtractElements(workflowElement, "inputs", "Entradas"));
-        model.Elements.AddRange(ExtractElements(workflowElement, "inputDefinitions", "Entradas"));
-        model.Elements.AddRange(ExtractElements(workflowElement, "outputs", "Saídas"));
-        model.Elements.AddRange(ExtractElements(workflowElement, "outputDefinitions", "Saídas"));
 
         if (workflowElement.TryGetProperty("root", out var rootActivity) && rootActivity.ValueKind == JsonValueKind.Object)
         {
@@ -683,10 +783,6 @@
                     .DistinctBy(x => $"{x.SourceId}|{x.TargetId}|{x.Outcome}")
                     .ToList();
         }
-
-        model.Elements = model.Elements
-            .DistinctBy(x => $"{x.Category}|{x.Name}|{x.Type}|{x.Value}")
-            .ToList();
 
         return model;
     }
@@ -831,9 +927,7 @@
                 }
 
                 if (TryGetWrappedActivity(property.Value, out var wrappedActivity))
-                {
                     yield return new ActivityReference(wrappedActivity, property.Name);
-                }
             }
 
             if (property.Value.ValueKind == JsonValueKind.Array)
@@ -847,9 +941,7 @@
                     }
 
                     if (TryGetWrappedActivity(item, out var wrappedActivity))
-                    {
                         yield return new ActivityReference(wrappedActivity, property.Name);
-                    }
                 }
             }
         }
@@ -914,7 +1006,7 @@
 
         foreach (var propertyName in preferredProperties)
         {
-            if (result.Count >= 6)
+            if (result.Count >= 5)
                 break;
 
             if (!activity.TryGetProperty(propertyName, out var propertyValue))
@@ -934,7 +1026,7 @@
 
         foreach (var property in activity.EnumerateObject())
         {
-            if (result.Count >= 6)
+            if (result.Count >= 5)
                 break;
 
             if (IsIgnoredProperty(property.Name))
@@ -1002,9 +1094,6 @@
             if (value.TryGetProperty("value", out var rawValue))
                 return TrimPreview(rawValue.ToString());
 
-            if (value.TryGetProperty("type", out var typeProp) && value.TryGetProperty("value", out var valueProp))
-                return TrimPreview($"{typeProp} = {valueProp}");
-
             var compact = value.ToString();
 
             if (!string.IsNullOrWhiteSpace(compact))
@@ -1012,43 +1101,6 @@
         }
 
         return null;
-    }
-
-    private List<NamedElementInfo> ExtractElements(JsonElement workflowElement, string propertyName, string category)
-    {
-        var result = new List<NamedElementInfo>();
-
-        if (!workflowElement.TryGetProperty(propertyName, out var property))
-            return result;
-
-        if (property.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in property.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.Object)
-                {
-                    result.Add(new NamedElementInfo
-                    {
-                        Category = category,
-                        Name = GetString(item, "name") ?? GetString(item, "id") ?? "(sem nome)",
-                        Type = GetString(item, "typeName") ?? GetString(item, "type"),
-                        Value = ExtractPreview(item)
-                    });
-                }
-                else
-                {
-                    result.Add(new NamedElementInfo
-                    {
-                        Category = category,
-                        Name = item.ToString(),
-                        Type = null,
-                        Value = null
-                    });
-                }
-            }
-        }
-
-        return result;
     }
 
     private static string? GetEndpointActivityId(JsonElement connection, string propertyName)
@@ -1116,8 +1168,8 @@
         };
     }
 
-    private static string? FirstNonEmpty(params string?[] values) =>
-        values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+    private static string? FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
 
     private static string? ShortType(string? fullType)
     {
@@ -1128,7 +1180,7 @@
         return lastDot >= 0 ? fullType[(lastDot + 1)..] : fullType;
     }
 
-    private static string TrimPreview(string? value, int maxLength = 90)
+    private static string TrimPreview(string? value, int maxLength = 80)
     {
         if (string.IsNullOrWhiteSpace(value))
             return string.Empty;
@@ -1158,33 +1210,11 @@
         }
 
         var text = new string(chars.ToArray());
-
         return char.ToUpper(text[0]) + text[1..];
     }
 
-    private static string DisplayOrDash(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "-" : value;
-
-    private string GetNodeCssClass(ActivityNode node)
-    {
-        var type = node.ShortType?.ToLowerInvariant() ?? string.Empty;
-
-        if (type.Contains("flowchart") || type.Contains("sequence") || type.Contains("decision") ||
-            type.Contains("if") || type.Contains("switch") || type.Contains("while") ||
-            type.Contains("for") || type.Contains("fork"))
-            return "wf-node-control";
-
-        if (type.Contains("http"))
-            return "wf-node-http";
-
-        if (type.Contains("delay") || type.Contains("timer") || type.Contains("event"))
-            return "wf-node-blocking";
-
-        if (type.Contains("write") || type.Contains("read") || type.Contains("variable") || type.Contains("set"))
-            return "wf-node-data";
-
-        return "wf-node-generic";
-    }
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value;
 
     private void ClearState()
     {
@@ -1192,6 +1222,12 @@
         HasError = false;
         FormattedJson = null;
         Workflow = null;
+        GraphNodes.Clear();
+        GraphEdges.Clear();
+        SelectedNodeId = null;
+        _draggingNodeId = null;
+        CanvasWidth = 1600;
+        CanvasHeight = 900;
     }
 
     private sealed class WorkflowViewModel
@@ -1204,7 +1240,6 @@
         public string? RootDisplayName { get; set; }
         public List<ActivityNode> Activities { get; set; } = new();
         public List<ConnectionInfo> Connections { get; set; } = new();
-        public List<NamedElementInfo> Elements { get; set; } = new();
     }
 
     private sealed class ActivityNode
@@ -1235,12 +1270,23 @@
         public string? Outcome { get; set; }
     }
 
-    private sealed class NamedElementInfo
+    private sealed class GraphNode
     {
-        public string Category { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string? Type { get; set; }
-        public string? Value { get; set; }
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Type { get; set; } = "";
+        public int Depth { get; set; }
+        public string Kind { get; set; } = "generic";
+        public double X { get; set; }
+        public double Y { get; set; }
+        public List<ActivityHighlight> Highlights { get; set; } = new();
+    }
+
+    private sealed class GraphEdge
+    {
+        public string SourceId { get; set; } = "";
+        public string TargetId { get; set; } = "";
+        public string? Outcome { get; set; }
     }
 
     private readonly record struct ActivityReference(JsonElement Element, string SourceProperty);
