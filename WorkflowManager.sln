@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36811.4 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkflowManager", "WorkflowManager\WorkflowManager\WorkflowManager.csproj", "{9F22A478-65B6-4698-8D07-8E9803753D0F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkflowManager.Client", "WorkflowManager\WorkflowManager.Client\WorkflowManager.Client.csproj", "{6D99442A-45C5-4E89-9678-3158D9AD1357}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9F22A478-65B6-4698-8D07-8E9803753D0F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F22A478-65B6-4698-8D07-8E9803753D0F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F22A478-65B6-4698-8D07-8E9803753D0F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F22A478-65B6-4698-8D07-8E9803753D0F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D99442A-45C5-4E89-9678-3158D9AD1357}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D99442A-45C5-4E89-9678-3158D9AD1357}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D99442A-45C5-4E89-9678-3158D9AD1357}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D99442A-45C5-4E89-9678-3158D9AD1357}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1F4BD115-DF1B-4F74-99C4-695A49282805}
+	EndGlobalSection
+EndGlobal

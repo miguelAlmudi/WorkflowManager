@@ -1,0 +1,127 @@
+﻿@page "/workflow-viewer"
+@rendermode InteractiveServer
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>Workflow Viewer</PageTitle>
+
+<h3>Workflow Viewer</h3>
+
+<p>Selecione um arquivo JSON de workflow para visualizar.</p>
+
+<InputFile OnChange="LoadWorkflowFile" accept=".json,application/json" class="form-control" />
+
+@if (!string.IsNullOrWhiteSpace(StatusMessage))
+{
+    <div class="alert @(HasError ? "alert-danger" : "alert-success") mt-3">
+        @StatusMessage
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(WorkflowName) ||
+    !string.IsNullOrWhiteSpace(WorkflowId) ||
+    !string.IsNullOrWhiteSpace(DefinitionId))
+{
+    <div class="card mt-3">
+        <div class="card-header">Resumo do workflow</div>
+        <div class="card-body">
+            <p><strong>Name:</strong> @WorkflowName</p>
+            <p><strong>Id:</strong> @WorkflowId</p>
+            <p><strong>DefinitionId:</strong> @DefinitionId</p>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(FormattedJson))
+{
+    <div class="mt-3">
+        <h5>JSON formatado</h5>
+        <pre style="background:#1e1e1e; color:#dcdcdc; padding:16px; border-radius:8px; overflow:auto; max-height:600px;">
+    @FormattedJson
+            </pre>
+    </div>
+}
+
+@code {
+    private const long MaxFileSize = 2 * 1024 * 1024; // 2 MB
+
+    private string? StatusMessage;
+    private bool HasError;
+
+    private string? FormattedJson;
+    private string? WorkflowName;
+    private string? WorkflowId;
+    private string? DefinitionId;
+
+    private async Task LoadWorkflowFile(InputFileChangeEventArgs e)
+    {
+        ClearData();
+
+        try
+        {
+            var file = e.File;
+
+            if (file is null)
+            {
+                HasError = true;
+                StatusMessage = "Nenhum arquivo foi selecionado.";
+                return;
+            }
+
+            using var stream = file.OpenReadStream(MaxFileSize);
+            using var reader = new StreamReader(stream);
+
+            var json = await reader.ReadToEndAsync();
+
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+
+            WorkflowName = GetJsonProperty(root, "name");
+            WorkflowId = GetJsonProperty(root, "id");
+            DefinitionId = GetJsonProperty(root, "definitionId");
+
+            FormattedJson = JsonSerializer.Serialize(
+                root,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+
+            HasError = false;
+            StatusMessage = "Workflow JSON carregado com sucesso.";
+        }
+        catch (JsonException ex)
+        {
+            HasError = true;
+            StatusMessage = $"O arquivo não contém um JSON válido. Detalhe: {ex.Message}";
+        }
+        catch (IOException ex)
+        {
+            HasError = true;
+            StatusMessage = $"Erro de leitura do arquivo. Detalhe: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            StatusMessage = $"Erro ao carregar o workflow. Detalhe: {ex.Message}";
+        }
+    }
+
+    private static string? GetJsonProperty(JsonElement root, string propertyName)
+    {
+        if (root.TryGetProperty(propertyName, out var value))
+            return value.ToString();
+
+        return null;
+    }
+
+    private void ClearData()
+    {
+        StatusMessage = null;
+        HasError = false;
+        FormattedJson = null;
+        WorkflowName = null;
+        WorkflowId = null;
+        DefinitionId = null;
+    }
+}
