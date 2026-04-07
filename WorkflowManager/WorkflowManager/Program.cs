@@ -2,6 +2,7 @@ using Elsa.Extensions;
 using WorkflowManager.Client.Pages;
 using WorkflowManager.Components;
 using BionicCrow.Foundation.System;
+using BionicCrow.Foundation.Resolved;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +21,10 @@ builder.Services.AddElsa(elsa =>
         options.Namespaces.Add("BionicCrow.Foundation.Interfaces");
         options.Namespaces.Add("BionicCrow.Foundation.DTO");
         options.Namespaces.Add("BionicCrow.Foundation.Enums");
+        options.AppendScript("""
+            string ProbeResolvedEntity() => typeof(ResolvedEntity).FullName!;
+            string ProbeResolvedLibrary() => typeof(ResolvedLibrary).FullName!;
+        """);
     });
 });
 
@@ -46,5 +51,32 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddInteractiveWebAssemblyRenderMode()
     .AddAdditionalAssemblies(typeof(WorkflowManager.Client._Imports).Assembly);
+
+app.MapGet("/test-bionic", () =>
+{
+    try
+    {
+        var result = new
+        {
+            ResolvedEntityType = typeof(ResolvedEntity).FullName,
+            ResolvedLibraryType = typeof(ResolvedLibrary).FullName,
+            SystemObjectsType = typeof(SystemObjects).FullName,
+            ResolvedEntityConstructors = typeof(ResolvedEntity)
+                .GetConstructors()
+                .Select(c => c.ToString())
+                .ToArray(),
+            ResolvedLibraryConstructors = typeof(ResolvedLibrary)
+                .GetConstructors()
+                .Select(c => c.ToString())
+                .ToArray()
+        };
+
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.ToString());
+    }
+});
 
 app.Run();
