@@ -64,7 +64,16 @@
 
         <div class="wf-actions">
             <button class="btn btn-outline-primary btn-sm" @onclick="ResetLayout">Reorganizar layout</button>
+            <button class="btn btn-success btn-sm" @onclick="ExecuteWorkflowAsync">Executar workflow</button>
         </div>
+
+        @if (!string.IsNullOrWhiteSpace(ExecutionStateJson))
+        {
+            <div class="wf-section">
+                <div class="wf-section-title">Resultado da execução</div>
+                <pre class="wf-json-box">@ExecutionStateJson</pre>
+            </div>
+        }
 
         @if (SelectedNode is not null)
         {
@@ -192,6 +201,7 @@
                 <pre class="wf-json-box">@FormattedJson</pre>
             </details>
         </div>
+
     }
 </div>
 

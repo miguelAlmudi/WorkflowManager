@@ -13,6 +13,8 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddElsa(elsa =>
 {
+    elsa.UseJavaScript();
+
     elsa.UseCSharp(options =>
     {
         options.Assemblies.Add(typeof(SystemObjects).Assembly);
@@ -26,6 +28,7 @@ builder.Services.AddElsa(elsa =>
             string ProbeResolvedLibrary() => typeof(ResolvedLibrary).FullName!;
         """);
     });
+    elsa.AddActivitiesFrom<Program>();
 });
 
 var app = builder.Build();

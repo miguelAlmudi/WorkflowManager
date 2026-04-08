@@ -1,6 +1,11 @@
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
 using System.Text.Json;
+using Elsa.Workflows;
+using Elsa.Workflows.Management.Mappers;
+using Elsa.Workflows.Management.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Components;
 
 namespace WorkflowManager.Components.Pages
 {
@@ -29,6 +34,11 @@ namespace WorkflowManager.Components.Pages
         private double CanvasWidth = 1600;
         private double CanvasHeight = 900;
 
+        [Inject] public IServiceProvider Services { get; set; } = default!;
+
+        private string? RawWorkflowJson;
+        private string? ExecutionStateJson;
+
         private GraphNode? SelectedNode => GraphNodes.FirstOrDefault(x => x.Id == SelectedNodeId);
 
         private async Task LoadWorkflowFile(InputFileChangeEventArgs e)
@@ -49,6 +59,8 @@ namespace WorkflowManager.Components.Pages
                 using var stream = file.OpenReadStream(MaxFileSize);
                 using var reader = new StreamReader(stream);
                 var json = await reader.ReadToEndAsync();
+
+                RawWorkflowJson = json;
 
                 using var document = JsonDocument.Parse(json);
 
@@ -77,6 +89,43 @@ namespace WorkflowManager.Components.Pages
             {
                 HasError = true;
                 StatusMessage = $"Erro ao processar o workflow: {ex.Message}";
+            }
+        }
+
+        private async Task ExecuteWorkflowAsync()
+        {
+            if (string.IsNullOrWhiteSpace(RawWorkflowJson))
+            {
+                HasError = true;
+                StatusMessage = "Carregue um workflow JSON antes de executar.";
+                return;
+            }
+
+            try
+            {
+                var serializer = Services.GetRequiredService<IActivitySerializer>();
+                var mapper = Services.GetRequiredService<WorkflowDefinitionMapper>();
+                var runner = Services.GetRequiredService<IWorkflowRunner>();
+
+                var workflowDefinitionModel = serializer.Deserialize<WorkflowDefinitionModel>(RawWorkflowJson);
+
+                if (workflowDefinitionModel == null)
+                    throw new InvalidOperationException("Não foi possível desserializar o workflow.");
+
+                var workflow = mapper.Map(workflowDefinitionModel);
+                var result = await runner.RunAsync(workflow);
+
+                ExecutionStateJson = JsonSerializer.Serialize(
+                    result.WorkflowState,
+                    new JsonSerializerOptions { WriteIndented = true });
+
+                HasError = false;
+                StatusMessage = $"Execução concluída. Status: {result.WorkflowState.Status}";
+            }
+            catch (Exception ex)
+            {
+                HasError = true;
+                StatusMessage = $"Erro ao executar o workflow: {ex.Message}";
             }
         }
 
