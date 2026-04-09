@@ -23,10 +23,11 @@ builder.Services.AddElsa(elsa =>
         options.Namespaces.Add("BionicCrow.Foundation.Interfaces");
         options.Namespaces.Add("BionicCrow.Foundation.DTO");
         options.Namespaces.Add("BionicCrow.Foundation.Enums");
-        options.AppendScript("""
-            string ProbeResolvedEntity() => typeof(ResolvedEntity).FullName!;
+        /*
+        options.AppendScript("""            
             string ProbeResolvedLibrary() => typeof(ResolvedLibrary).FullName!;
         """);
+        */
     });
     elsa.AddActivitiesFrom<Program>();
 });
@@ -55,6 +56,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveWebAssemblyRenderMode()
     .AddAdditionalAssemblies(typeof(WorkflowManager.Client._Imports).Assembly);
 
+/*
 app.MapGet("/test-bionic", () =>
 {
     try
@@ -81,5 +83,6 @@ app.MapGet("/test-bionic", () =>
         return Results.Problem(ex.ToString());
     }
 });
+*/
 
 app.Run();
