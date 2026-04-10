@@ -14,11 +14,4 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.22" />
   </ItemGroup>
 
-	<ItemGroup>
-		<Reference Include="BionicCrow.Foundation">
-			<HintPath>libs\BionicCrow.Foundation.dll</HintPath>
-			<Private>true</Private>
-		</Reference>
-	</ItemGroup>
-
 </Project>

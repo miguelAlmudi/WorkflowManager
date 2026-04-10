@@ -1,8 +1,8 @@
 using Elsa.Extensions;
 using WorkflowManager.Client.Pages;
 using WorkflowManager.Components;
-using BionicCrow.Foundation.System;
-using BionicCrow.Foundation.Resolved;
+//using BionicCrow.Foundation.System;
+//using BionicCrow.Foundation.Resolved;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,12 +17,13 @@ builder.Services.AddElsa(elsa =>
 
     elsa.UseCSharp(options =>
     {
-        options.Assemblies.Add(typeof(SystemObjects).Assembly);
+        //options.Assemblies.Add(typeof(SystemObjects).Assembly);
         options.Namespaces.Add("BionicCrow.Foundation.System");
         options.Namespaces.Add("BionicCrow.Foundation.Resolved");
         options.Namespaces.Add("BionicCrow.Foundation.Interfaces");
         options.Namespaces.Add("BionicCrow.Foundation.DTO");
         options.Namespaces.Add("BionicCrow.Foundation.Enums");
+        options.Namespaces.Add("BionicCrow.Foundation.Core");
         /*
         options.AppendScript("""            
             string ProbeResolvedLibrary() => typeof(ResolvedLibrary).FullName!;
