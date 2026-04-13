@@ -78,38 +78,41 @@ builder.Services.AddElsa(elsa =>
         options.Namespaces.Add("BionicCrow.Foundation.Enums");
 
         options.AppendScript("""
-        string LerTestClassReflection(string nome, string descricao)
-        {
-            System.Reflection.Assembly? asm = null;
-
-            foreach (var a in System.AppDomain.CurrentDomain.GetAssemblies())
+            string LerTestClass2Reflection(string nome, int id)
             {
-                if (a.GetName().Name == "BionicCrow.Foundation")
+                System.Reflection.Assembly? asm = null;
+
+                foreach (var a in System.AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    asm = a;
-                    break;
+                    if (a.GetName().Name == "BionicCrow.Foundation")
+                    {
+                        asm = a;
+                        break;
+                    }
                 }
+
+                if (asm == null)
+                    throw new System.Exception("Assembly BionicCrow.Foundation não encontrada no AppDomain.");
+
+                var type = asm.GetType("BionicCrow.Foundation.Core.TestClass2");
+
+                if (type == null)
+                    throw new System.Exception("Tipo BionicCrow.Foundation.Core.TestClass2 não encontrado.");
+
+                var obj = System.Activator.CreateInstance(type, nome, id);
+
+                if (obj == null)
+                    throw new System.Exception("Não foi possível criar a instância de TestClass2.");
+
+                var nomeValue = type.GetProperty("Nome")?.GetValue(obj)?.ToString() ?? "";
+                var idValue = type.GetProperty("Id")?.GetValue(obj)?.ToString() ?? "";
+
+                var metodoResumo = type.GetMethod("Resumo");
+                var resumoValue = metodoResumo?.Invoke(obj, null)?.ToString() ?? "";
+
+                return $"Id: {idValue} | Nome: {nomeValue} | Resumo: {resumoValue}";
             }
-
-            if (asm == null)
-                throw new System.Exception("Assembly BionicCrow.Foundation não encontrada no AppDomain.");
-
-            var type = asm.GetType("BionicCrow.Foundation.Core.TestClass");
-
-            if (type == null)
-                throw new System.Exception("Tipo BionicCrow.Foundation.Core.TestClass não encontrado.");
-
-            var obj = System.Activator.CreateInstance(type, nome, descricao);
-
-            if (obj == null)
-                throw new System.Exception("Não foi possível criar a instância de TestClass.");
-
-            var nomeValue = type.GetProperty("Nome")?.GetValue(obj)?.ToString() ?? "";
-            var descricaoValue = type.GetProperty("Descricao")?.GetValue(obj)?.ToString() ?? "";
-
-            return $"Nome: {nomeValue} | Descrição: {descricaoValue}";
-        }
-        """);
+            """);
     });
 
     elsa.AddActivitiesFrom<Program>();
