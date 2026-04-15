@@ -1,4 +1,7 @@
 using Elsa.Extensions;
+using Elsa.Workflows;
+using Elsa.Workflows.Attributes;
+using Elsa.Workflows.Models;
 using WorkflowManager.Client.Pages;
 using WorkflowManager.Components;
 using System.Reflection;
@@ -12,49 +15,8 @@ var projectRoot = builder.Environment.ContentRootPath;
 // Pasta libs dentro do projeto.
 var libsFolder = Path.Combine(projectRoot, "libs");
 
-// Caminho da DLL principal.
-var bionicDllPath = Path.Combine(libsFolder, "BionicCrow.Foundation.dll");
-
-Assembly? bionicAssembly = null;
-string? loadedPath = null;
-
-// Resolver dependências da pasta libs.
-AssemblyLoadContext.Default.Resolving += (context, assemblyName) =>
-{
-    var dependencyPath = Path.Combine(libsFolder, $"{assemblyName.Name}.dll");
-
-    if (!File.Exists(dependencyPath))
-        return null;
-
-    return context.LoadFromAssemblyPath(dependencyPath);
-};
-
-try
-{
-    Console.WriteLine("ContentRootPath: " + projectRoot);
-    Console.WriteLine("LibsFolder: " + libsFolder);
-    Console.WriteLine("DLL principal: " + bionicDllPath);
-    Console.WriteLine("DLL existe? " + File.Exists(bionicDllPath));
-
-    if (File.Exists(bionicDllPath))
-    {
-        bionicAssembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(bionicDllPath);
-        loadedPath = bionicDllPath;
-        Console.WriteLine("DLL carregada com sucesso.");
-    }
-    else
-    {
-        Console.WriteLine("DLL não encontrada: " + bionicDllPath);
-    }
-}
-catch (Exception ex)
-{
-    Console.WriteLine("Erro ao carregar DLL: " + ex);
-}
-
-if (bionicAssembly == null)
-    Console.WriteLine("Nenhum caminho funcionou para carregar BionicCrow.Foundation.dll");
-
+// Inicializa o carregamento dinâmico de DLLs e namespaces.
+DynamicAssemblyRegistry.Initialize(libsFolder, typeof(Program).Assembly);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -67,52 +29,11 @@ builder.Services.AddElsa(elsa =>
 
     elsa.UseCSharp(options =>
     {
-        if (bionicAssembly != null)
-            options.Assemblies.Add(bionicAssembly);
+        foreach (var assembly in DynamicAssemblyRegistry.AllAssemblies)
+            options.Assemblies.Add(assembly);
 
-        options.Namespaces.Add("BionicCrow.Foundation.Core");
-        options.Namespaces.Add("BionicCrow.Foundation.System");
-        options.Namespaces.Add("BionicCrow.Foundation.Resolved");
-        options.Namespaces.Add("BionicCrow.Foundation.Interfaces");
-        options.Namespaces.Add("BionicCrow.Foundation.DTO");
-        options.Namespaces.Add("BionicCrow.Foundation.Enums");
-
-        options.AppendScript("""
-            string LerTestClass2Reflection(string nome, int id)
-            {
-                System.Reflection.Assembly? asm = null;
-
-                foreach (var a in System.AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    if (a.GetName().Name == "BionicCrow.Foundation")
-                    {
-                        asm = a;
-                        break;
-                    }
-                }
-
-                if (asm == null)
-                    throw new System.Exception("Assembly BionicCrow.Foundation não encontrada no AppDomain.");
-
-                var type = asm.GetType("BionicCrow.Foundation.Core.TestClass2");
-
-                if (type == null)
-                    throw new System.Exception("Tipo BionicCrow.Foundation.Core.TestClass2 não encontrado.");
-
-                var obj = System.Activator.CreateInstance(type, nome, id);
-
-                if (obj == null)
-                    throw new System.Exception("Não foi possível criar a instância de TestClass2.");
-
-                var nomeValue = type.GetProperty("Nome")?.GetValue(obj)?.ToString() ?? "";
-                var idValue = type.GetProperty("Id")?.GetValue(obj)?.ToString() ?? "";
-
-                var metodoResumo = type.GetMethod("Resumo");
-                var resumoValue = metodoResumo?.Invoke(obj, null)?.ToString() ?? "";
-
-                return $"Id: {idValue} | Nome: {nomeValue} | Resumo: {resumoValue}";
-            }
-            """);
+        foreach (var ns in DynamicAssemblyRegistry.AllNamespaces)
+            options.Namespaces.Add(ns);
     });
 
     elsa.AddActivitiesFrom<Program>();
@@ -128,7 +49,6 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
@@ -142,155 +62,401 @@ app.MapRazorComponents<App>()
     .AddInteractiveWebAssemblyRenderMode()
     .AddAdditionalAssemblies(typeof(WorkflowManager.Client._Imports).Assembly);
 
-/*
-app.MapGet("/test-bionic", () =>
+app.MapGet("/debug-libs", () =>
+{
+    return Results.Ok(new
+    {
+        ProjectRoot = projectRoot,
+        LibsFolder = libsFolder,
+        LibsExists = Directory.Exists(libsFolder),
+        DllFiles = Directory.Exists(libsFolder)
+            ? Directory.GetFiles(libsFolder, "*.dll", SearchOption.AllDirectories)
+                .OrderBy(Path.GetFileName)
+                .ToArray()
+            : Array.Empty<string>()
+    });
+});
+
+app.MapGet("/debug-loaded-assemblies", () =>
+{
+    return Results.Ok(new
+    {
+        LibsFolder = libsFolder,
+        LoadedAssemblyCount = DynamicAssemblyRegistry.AllAssemblies.Count,
+        LoadedAssemblies = DynamicAssemblyRegistry.AllAssemblies
+            .Select(a => new
+            {
+                Name = a.GetName().Name,
+                FullName = a.FullName,
+                Location = SafeGetLocation(a)
+            })
+            .OrderBy(x => x.Name)
+            .ToArray()
+    });
+});
+
+app.MapGet("/debug-loaded-namespaces", () =>
+{
+    return Results.Ok(new
+    {
+        NamespaceCount = DynamicAssemblyRegistry.AllNamespaces.Count,
+        Namespaces = DynamicAssemblyRegistry.AllNamespaces
+            .OrderBy(x => x)
+            .ToArray()
+    });
+});
+
+app.MapGet("/testclass2-reflection", () =>
 {
     try
     {
-        var result = new
-        {
-            ResolvedEntityType = typeof(ResolvedEntity).FullName,
-            ResolvedLibraryType = typeof(ResolvedLibrary).FullName,
-            SystemObjectsType = typeof(SystemObjects).FullName,
-            ResolvedEntityConstructors = typeof(ResolvedEntity)
-                .GetConstructors()
-                .Select(c => c.ToString())
-                .ToArray(),
-            ResolvedLibraryConstructors = typeof(ResolvedLibrary)
-                .GetConstructors()
-                .Select(c => c.ToString())
-                .ToArray()
-        };
+        var result = TestClass2ReflectionHelper.Execute("Teste via endpoint", 123);
 
-        return Results.Ok(result);
+        return Results.Ok(new
+        {
+            Success = true,
+            result.TypeFullName,
+            result.AssemblyName,
+            result.Nome,
+            result.Id,
+            result.Resumo
+        });
     }
     catch (Exception ex)
     {
         return Results.Problem(ex.ToString());
     }
 });
-*/
-app.MapGet("/debug-bionic-path", () =>
-{
-    return Results.Ok(new
-    {
-        ContentRootPath = projectRoot,
-        LibsFolder = libsFolder,
-        MainDllPath = bionicDllPath,
-        MainDllExists = File.Exists(bionicDllPath),
-        AssemblyLoaded = bionicAssembly != null,
-        LoadedAssembly = bionicAssembly?.FullName,
-        LoadedFrom = loadedPath
-    });
-});
-
-
-// Endpoint de teste para confirmar que a DLL carregou.
-app.MapGet("/testclass-reflection", () =>
-{
-    if (bionicAssembly == null)
-        return Results.Problem("A DLL não foi carregada.");
-
-    var testClassType = bionicAssembly.GetType("BionicCrow.Foundation.Core.TestClass");
-
-    if (testClassType == null)
-        return Results.Problem("O tipo BionicCrow.Foundation.Core.TestClass não foi encontrado.");
-
-    var instance = Activator.CreateInstance(
-        testClassType,
-        "Teste via Reflection",
-        "Descrição criada via DLL");
-
-    if (instance == null)
-        return Results.Problem("Não foi possível criar a instância de TestClass.");
-
-    var nome = testClassType.GetProperty("Nome")?.GetValue(instance)?.ToString();
-    var descricao = testClassType.GetProperty("Descricao")?.GetValue(instance)?.ToString();
-
-    return Results.Ok(new
-    {
-        Tipo = testClassType.FullName,
-        Nome = nome,
-        Descricao = descricao,
-        LoadedFrom = loadedPath
-    });
-});
-
-app.MapGet("/debug-bionic-files", () =>
-{
-    var projectLibs = Path.Combine(projectRoot, "libs");
-    var bionicLibs = Path.Combine(projectRoot, "libs", "BionicCrow");
-
-    return Results.Ok(new
-    {
-        ProjectRoot = projectRoot,
-        ProjectLibsExists = Directory.Exists(projectLibs),
-        ProjectLibsFiles = Directory.Exists(projectLibs)
-            ? Directory.GetFiles(projectLibs, "*.*", SearchOption.AllDirectories)
-                .Select(Path.GetFullPath)
-                .ToArray()
-            : Array.Empty<string>(),
-
-        BionicLibsExists = Directory.Exists(bionicLibs),
-        BionicLibsFiles = Directory.Exists(bionicLibs)
-            ? Directory.GetFiles(bionicLibs, "*.*", SearchOption.AllDirectories)
-                .Select(Path.GetFullPath)
-                .ToArray()
-            : Array.Empty<string>()
-    });
-});
-
-app.MapGet("/testclass-type", () =>
-{
-    if (bionicAssembly == null)
-        return Results.Problem("A DLL não foi carregada.");
-
-    var type = bionicAssembly.GetType("BionicCrow.Foundation.Core.TestClass");
-
-    return Results.Ok(new
-    {
-        Found = type != null,
-        FullName = type?.FullName,
-        Namespace = type?.Namespace,
-        Assembly = type?.Assembly.FullName
-    });
-});
-
-app.MapGet("/testclass-properties", () =>
-{
-    if (bionicAssembly == null)
-        return Results.Problem("A DLL não foi carregada.");
-
-    var type = bionicAssembly.GetType("BionicCrow.Foundation.Core.TestClass");
-    if (type == null)
-        return Results.Problem("Tipo não encontrado.");
-
-    var props = type.GetProperties()
-        .Select(p => new
-        {
-            p.Name,
-            PropertyType = p.PropertyType.FullName
-        });
-
-    return Results.Ok(props);
-});
-
-app.MapGet("/testclass-constructors", () =>
-{
-    if (bionicAssembly == null)
-        return Results.Problem("A DLL não foi carregada.");
-
-    var type = bionicAssembly.GetType("BionicCrow.Foundation.Core.TestClass");
-    if (type == null)
-        return Results.Problem("Tipo não encontrado.");
-
-    var ctors = type.GetConstructors()
-        .Select(c => c.ToString())
-        .ToArray();
-
-    return Results.Ok(ctors);
-});
-
-
 
 app.Run();
+
+static string SafeGetLocation(Assembly assembly)
+{
+    try
+    {
+        return assembly.Location;
+    }
+    catch
+    {
+        return string.Empty;
+    }
+}
+
+public static class DynamicAssemblyRegistry
+{
+    private static readonly object Sync = new();
+    private static bool _initialized;
+    private static string? _libsFolder;
+
+    private static readonly List<Assembly> _assemblies = new();
+    private static readonly HashSet<string> _namespaces = new(StringComparer.Ordinal);
+    private static readonly List<string> _dllPaths = new();
+
+    public static IReadOnlyList<Assembly> AllAssemblies => _assemblies;
+    public static IReadOnlyCollection<string> AllNamespaces => _namespaces;
+    public static IReadOnlyList<string> AllDllPaths => _dllPaths;
+
+    public static void Initialize(string libsFolder, params Assembly[] extraAssemblies)
+    {
+        lock (Sync)
+        {
+            if (_initialized)
+                return;
+
+            _initialized = true;
+            _libsFolder = libsFolder;
+
+            Console.WriteLine($"[DynamicAssemblyRegistry] Libs folder: {_libsFolder}");
+
+            AssemblyLoadContext.Default.Resolving += ResolveFromLibsFolder;
+
+            // Carrega todas as DLLs encontradas em libs.
+            if (Directory.Exists(_libsFolder))
+            {
+                var dllFiles = Directory
+                    .GetFiles(_libsFolder, "*.dll", SearchOption.AllDirectories)
+                    .OrderBy(Path.GetFileName)
+                    .ToList();
+
+                Console.WriteLine("[DynamicAssemblyRegistry] DLLs encontradas:");
+                foreach (var dll in dllFiles)
+                {
+                    Console.WriteLine(" - " + dll);
+                    _dllPaths.Add(dll);
+                }
+
+                foreach (var dllPath in dllFiles)
+                {
+                    TryLoadAssemblyFromPath(dllPath);
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[DynamicAssemblyRegistry] Pasta libs não encontrada: {_libsFolder}");
+            }
+
+            // Registra assemblies extras, como a própria assembly do host.
+            foreach (var assembly in extraAssemblies.Distinct())
+                RegisterAssembly(assembly);
+
+            Console.WriteLine($"[DynamicAssemblyRegistry] Assemblies registradas: {_assemblies.Count}");
+            Console.WriteLine($"[DynamicAssemblyRegistry] Namespaces descobertos: {_namespaces.Count}");
+        }
+    }
+
+    public static IReadOnlyList<Assembly> GetAssembliesWithActivities()
+    {
+        return _assemblies
+            .Where(ContainsElsaActivities)
+            .Distinct()
+            .ToList();
+    }
+
+    public static Type? FindType(string fullTypeName)
+    {
+        foreach (var assembly in _assemblies)
+        {
+            try
+            {
+                var type = assembly.GetType(fullTypeName, throwOnError: false, ignoreCase: false);
+                if (type != null)
+                    return type;
+            }
+            catch
+            {
+                // Ignora e continua procurando.
+            }
+        }
+
+        return null;
+    }
+
+    private static Assembly? ResolveFromLibsFolder(AssemblyLoadContext context, AssemblyName assemblyName)
+    {
+        if (string.IsNullOrWhiteSpace(_libsFolder) || !Directory.Exists(_libsFolder))
+            return null;
+
+        try
+        {
+            var dependencyPath = Directory
+                .GetFiles(_libsFolder, $"{assemblyName.Name}.dll", SearchOption.AllDirectories)
+                .FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(dependencyPath))
+                return null;
+
+            var fullPath = Path.GetFullPath(dependencyPath);
+
+            var alreadyLoaded = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a =>
+                {
+                    try
+                    {
+                        return !string.IsNullOrWhiteSpace(a.Location) &&
+                               string.Equals(Path.GetFullPath(a.Location), fullPath, StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                });
+
+            if (alreadyLoaded != null)
+                return alreadyLoaded;
+
+            var loaded = context.LoadFromAssemblyPath(fullPath);
+            RegisterAssembly(loaded);
+            return loaded;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void TryLoadAssemblyFromPath(string dllPath)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(dllPath);
+
+            var alreadyLoaded = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a =>
+                {
+                    try
+                    {
+                        return !string.IsNullOrWhiteSpace(a.Location) &&
+                               string.Equals(Path.GetFullPath(a.Location), fullPath, StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                });
+
+            Assembly assembly;
+
+            if (alreadyLoaded != null)
+            {
+                assembly = alreadyLoaded;
+                Console.WriteLine($"[DynamicAssemblyRegistry] Já carregada: {assembly.GetName().Name}");
+            }
+            else
+            {
+                assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(fullPath);
+                Console.WriteLine($"[DynamicAssemblyRegistry] Carregada: {assembly.GetName().Name}");
+            }
+
+            RegisterAssembly(assembly);
+        }
+        catch (BadImageFormatException)
+        {
+            Console.WriteLine($"[DynamicAssemblyRegistry] Ignorando arquivo não gerenciado/inválido: {dllPath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DynamicAssemblyRegistry] Erro ao carregar {dllPath}: {ex.Message}");
+        }
+    }
+
+    private static void RegisterAssembly(Assembly assembly)
+    {
+        if (_assemblies.Any(x => string.Equals(x.FullName, assembly.FullName, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        _assemblies.Add(assembly);
+
+        foreach (var ns in GetNamespacesFromAssembly(assembly))
+            _namespaces.Add(ns);
+    }
+
+    private static IEnumerable<string> GetNamespacesFromAssembly(Assembly assembly)
+    {
+        return GetLoadableTypes(assembly)
+            .Where(t => !string.IsNullOrWhiteSpace(t.Namespace))
+            .Select(t => t.Namespace!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x);
+    }
+
+    private static bool ContainsElsaActivities(Assembly assembly)
+    {
+        try
+        {
+            return GetLoadableTypes(assembly)
+                .Any(t =>
+                    t is { IsClass: true, IsAbstract: false } &&
+                    typeof(IActivity).IsAssignableFrom(t));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t != null)!;
+        }
+        catch
+        {
+            return Array.Empty<Type>();
+        }
+    }
+}
+
+public static class TestClass2ReflectionHelper
+{
+    public static TestClass2ReflectionResult Execute(string? nome, int id)
+    {
+        var type = DynamicAssemblyRegistry.FindType("BionicCrow.Foundation.Core.TestClass2");
+
+        if (type == null)
+            throw new InvalidOperationException(
+                "O tipo 'BionicCrow.Foundation.Core.TestClass2' não foi encontrado entre as DLLs carregadas.");
+
+        var instance = CreateInstance(type, nome, id);
+
+        var nomeValue = type.GetProperty("Nome")?.GetValue(instance)?.ToString() ?? string.Empty;
+        var idValue = type.GetProperty("Id")?.GetValue(instance)?.ToString() ?? id.ToString();
+
+        var resumoMethod = type.GetMethod("Resumo", Type.EmptyTypes);
+        var resumoValue = resumoMethod?.Invoke(instance, null)?.ToString() ?? string.Empty;
+
+        return new TestClass2ReflectionResult
+        {
+            AssemblyName = type.Assembly.GetName().Name ?? string.Empty,
+            TypeFullName = type.FullName ?? string.Empty,
+            Nome = nomeValue,
+            Id = idValue,
+            Resumo = resumoValue
+        };
+    }
+
+    private static object CreateInstance(Type type, string? nome, int id)
+    {
+        // Tenta construtor (string, int)
+        var ctorStringInt = type.GetConstructor(new[] { typeof(string), typeof(int) });
+        if (ctorStringInt != null)
+            return ctorStringInt.Invoke(new object?[] { nome ?? string.Empty, id });
+
+        // Tenta construtor padrão e depois preencher propriedades.
+        var parameterlessCtor = type.GetConstructor(Type.EmptyTypes);
+        if (parameterlessCtor != null)
+        {
+            var obj = parameterlessCtor.Invoke(null);
+
+            var nomeProp = type.GetProperty("Nome");
+            if (nomeProp?.CanWrite == true)
+                nomeProp.SetValue(obj, nome ?? string.Empty);
+
+            var idProp = type.GetProperty("Id");
+            if (idProp?.CanWrite == true)
+                idProp.SetValue(obj, id);
+
+            return obj;
+        }
+
+        throw new InvalidOperationException(
+            "Não foi possível instanciar TestClass2. " +
+            "A classe precisa ter um construtor (string, int) ou um construtor vazio com propriedades Nome/Id graváveis.");
+    }
+}
+
+public sealed class TestClass2ReflectionResult
+{
+    public string AssemblyName { get; set; } = string.Empty;
+    public string TypeFullName { get; set; } = string.Empty;
+    public string Nome { get; set; } = string.Empty;
+    public string Id { get; set; } = string.Empty;
+    public string Resumo { get; set; } = string.Empty;
+}
+
+[Activity("BionicCrow", "Reflection", "Instancia BionicCrow.Foundation.Core.TestClass2 e retorna seu resumo")]
+public class TestClass2Activity : CodeActivity
+{
+    [Input(Description = "Nome passado para TestClass2")]
+    public Input<string> Nome { get; set; } = default!;
+
+    [Input(Description = "Id passado para TestClass2")]
+    public Input<int> Id { get; set; } = default!;
+
+    [Output(Description = "Resumo gerado por TestClass2")]
+    public Output<string> Resultado { get; set; } = default!;
+
+    protected override void Execute(ActivityExecutionContext context)
+    {
+        var nome = Nome.Get(context);
+        var id = Id.Get(context);
+
+        var result = TestClass2ReflectionHelper.Execute(nome, id);
+
+        Resultado.Set(context, result.Resumo);
+    }
+}
