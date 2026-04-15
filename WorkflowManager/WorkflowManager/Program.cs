@@ -77,6 +77,17 @@ app.MapGet("/debug-libs", () =>
     });
 });
 
+app.MapGet("/debug-all-types", () =>
+{
+    var catalog = ReflectionCatalog.GetAssembliesAndTypes(DynamicAssemblyRegistry.AllAssemblies);
+
+    return Results.Ok(new
+    {
+        AssemblyCount = catalog.Count,
+        catalog
+    });
+});
+
 app.MapGet("/debug-loaded-assemblies", () =>
 {
     return Results.Ok(new
@@ -106,27 +117,21 @@ app.MapGet("/debug-loaded-namespaces", () =>
     });
 });
 
-app.MapGet("/testclass2-reflection", () =>
+app.MapGet("/debug-find-types/{name}", (string name) =>
 {
-    try
-    {
-        var result = TestClass2ReflectionHelper.Execute("Teste via endpoint", 123);
-
-        return Results.Ok(new
+    var types = DynamicAssemblyRegistry.FindTypesByName(name)
+        .Select(t => new
         {
-            Success = true,
-            result.TypeFullName,
-            result.AssemblyName,
-            result.Nome,
-            result.Id,
-            result.Resumo
-        });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(ex.ToString());
-    }
+            t.FullName,
+            t.Name,
+            Namespace = t.Namespace,
+            Assembly = t.Assembly.GetName().Name
+        })
+        .ToArray();
+
+    return Results.Ok(types);
 });
+
 
 app.Run();
 
@@ -204,12 +209,29 @@ public static class DynamicAssemblyRegistry
         }
     }
 
-    public static IReadOnlyList<Assembly> GetAssembliesWithActivities()
+    public static IReadOnlyList<Type> FindTypesByName(string typeName)
     {
-        return _assemblies
-            .Where(ContainsElsaActivities)
-            .Distinct()
+        return DynamicAssemblyRegistry.AllAssemblies
+            .SelectMany(GetLoadableTypes)
+            .Where(t => t.IsClass && string.Equals(t.Name, typeName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(t => t.FullName)
             .ToList();
+
+        static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+        {
+            try
+            {
+                return assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                return ex.Types.Where(t => t != null)!;
+            }
+            catch
+            {
+                return Array.Empty<Type>();
+            }
+        }
     }
 
     public static Type? FindType(string fullTypeName)
@@ -339,19 +361,72 @@ public static class DynamicAssemblyRegistry
             .OrderBy(x => x);
     }
 
-    private static bool ContainsElsaActivities(Assembly assembly)
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
     {
         try
         {
-            return GetLoadableTypes(assembly)
-                .Any(t =>
-                    t is { IsClass: true, IsAbstract: false } &&
-                    typeof(IActivity).IsAssignableFrom(t));
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t != null)!;
         }
         catch
         {
-            return false;
+            return Array.Empty<Type>();
         }
+    }
+}
+
+
+public static class ReflectionCatalog
+{
+    public static IReadOnlyList<AssemblyInfoDto> GetAssembliesAndTypes(IEnumerable<Assembly> assemblies)
+    {
+        var result = new List<AssemblyInfoDto>();
+
+        foreach (var assembly in assemblies)
+        {
+            var types = GetLoadableTypes(assembly)
+                .Where(t => t.IsClass)
+                .OrderBy(t => t.FullName)
+                .Select(t => new TypeInfoDto
+                {
+                    FullName = t.FullName ?? "",
+                    Name = t.Name,
+                    Namespace = t.Namespace ?? "",
+                    IsAbstract = t.IsAbstract,
+                    Methods = t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                        .Where(m => !m.IsSpecialName)
+                        .OrderBy(m => m.Name)
+                        .Select(m => new MethodInfoDto
+                        {
+                            Name = m.Name,
+                            ReturnType = m.ReturnType.FullName ?? m.ReturnType.Name,
+                            Parameters = m.GetParameters()
+                                .Select(p => $"{p.ParameterType.Name} {p.Name}")
+                                .ToArray()
+                        })
+                        .ToArray(),
+                    Properties = t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                        .Select(p => $"{p.PropertyType.Name} {p.Name}")
+                        .ToArray(),
+                    Constructors = t.GetConstructors()
+                        .Select(c => string.Join(", ", c.GetParameters()
+                            .Select(p => $"{p.ParameterType.Name} {p.Name}")))
+                        .ToArray()
+                })
+                .ToArray();
+
+            result.Add(new AssemblyInfoDto
+            {
+                Name = assembly.GetName().Name ?? "",
+                FullName = assembly.FullName ?? "",
+                Types = types
+            });
+        }
+
+        return result;
     }
 
     private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
@@ -371,92 +446,63 @@ public static class DynamicAssemblyRegistry
     }
 }
 
-public static class TestClass2ReflectionHelper
+public sealed class AssemblyInfoDto
 {
-    public static TestClass2ReflectionResult Execute(string? nome, int id)
+    public string Name { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public TypeInfoDto[] Types { get; set; } = Array.Empty<TypeInfoDto>();
+}
+
+public sealed class TypeInfoDto
+{
+    public string FullName { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Namespace { get; set; } = "";
+    public bool IsAbstract { get; set; }
+    public MethodInfoDto[] Methods { get; set; } = Array.Empty<MethodInfoDto>();
+    public string[] Properties { get; set; } = Array.Empty<string>();
+    public string[] Constructors { get; set; } = Array.Empty<string>();
+}
+
+public sealed class MethodInfoDto
+{
+    public string Name { get; set; } = "";
+    public string ReturnType { get; set; } = "";
+    public string[] Parameters { get; set; } = Array.Empty<string>();
+}
+
+public static class ReflectionInvoker
+{
+    public static object? InvokeMethod(
+        string fullTypeName,
+        string methodName,
+        object?[]? constructorArgs = null,
+        object?[]? methodArgs = null)
     {
-        var type = DynamicAssemblyRegistry.FindType("BionicCrow.Foundation.Core.TestClass2");
+        var type = DynamicAssemblyRegistry.FindType(fullTypeName);
 
         if (type == null)
-            throw new InvalidOperationException(
-                "O tipo 'BionicCrow.Foundation.Core.TestClass2' não foi encontrado entre as DLLs carregadas.");
+            throw new InvalidOperationException($"Tipo não encontrado: {fullTypeName}");
 
-        var instance = CreateInstance(type, nome, id);
+        object? instance = null;
 
-        var nomeValue = type.GetProperty("Nome")?.GetValue(instance)?.ToString() ?? string.Empty;
-        var idValue = type.GetProperty("Id")?.GetValue(instance)?.ToString() ?? id.ToString();
-
-        var resumoMethod = type.GetMethod("Resumo", Type.EmptyTypes);
-        var resumoValue = resumoMethod?.Invoke(instance, null)?.ToString() ?? string.Empty;
-
-        return new TestClass2ReflectionResult
+        if (!type.IsAbstract && !type.IsInterface)
         {
-            AssemblyName = type.Assembly.GetName().Name ?? string.Empty,
-            TypeFullName = type.FullName ?? string.Empty,
-            Nome = nomeValue,
-            Id = idValue,
-            Resumo = resumoValue
-        };
-    }
-
-    private static object CreateInstance(Type type, string? nome, int id)
-    {
-        // Tenta construtor (string, int)
-        var ctorStringInt = type.GetConstructor(new[] { typeof(string), typeof(int) });
-        if (ctorStringInt != null)
-            return ctorStringInt.Invoke(new object?[] { nome ?? string.Empty, id });
-
-        // Tenta construtor padrão e depois preencher propriedades.
-        var parameterlessCtor = type.GetConstructor(Type.EmptyTypes);
-        if (parameterlessCtor != null)
-        {
-            var obj = parameterlessCtor.Invoke(null);
-
-            var nomeProp = type.GetProperty("Nome");
-            if (nomeProp?.CanWrite == true)
-                nomeProp.SetValue(obj, nome ?? string.Empty);
-
-            var idProp = type.GetProperty("Id");
-            if (idProp?.CanWrite == true)
-                idProp.SetValue(obj, id);
-
-            return obj;
+            instance = Activator.CreateInstance(type, constructorArgs ?? Array.Empty<object?>());
         }
 
-        throw new InvalidOperationException(
-            "Não foi possível instanciar TestClass2. " +
-            "A classe precisa ter um construtor (string, int) ou um construtor vazio com propriedades Nome/Id graváveis.");
-    }
-}
+        var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+            .Where(m => m.Name == methodName)
+            .ToList();
 
-public sealed class TestClass2ReflectionResult
-{
-    public string AssemblyName { get; set; } = string.Empty;
-    public string TypeFullName { get; set; } = string.Empty;
-    public string Nome { get; set; } = string.Empty;
-    public string Id { get; set; } = string.Empty;
-    public string Resumo { get; set; } = string.Empty;
-}
+        if (!methods.Any())
+            throw new InvalidOperationException($"Método não encontrado: {methodName}");
 
-[Activity("BionicCrow", "Reflection", "Instancia BionicCrow.Foundation.Core.TestClass2 e retorna seu resumo")]
-public class TestClass2Activity : CodeActivity
-{
-    [Input(Description = "Nome passado para TestClass2")]
-    public Input<string> Nome { get; set; } = default!;
+        var method = methods.FirstOrDefault(m => m.GetParameters().Length == (methodArgs?.Length ?? 0));
 
-    [Input(Description = "Id passado para TestClass2")]
-    public Input<int> Id { get; set; } = default!;
+        if (method == null)
+            throw new InvalidOperationException($"Nenhuma sobrecarga compatível encontrada para {methodName}");
 
-    [Output(Description = "Resumo gerado por TestClass2")]
-    public Output<string> Resultado { get; set; } = default!;
-
-    protected override void Execute(ActivityExecutionContext context)
-    {
-        var nome = Nome.Get(context);
-        var id = Id.Get(context);
-
-        var result = TestClass2ReflectionHelper.Execute(nome, id);
-
-        Resultado.Set(context, result.Resumo);
+        return method.Invoke(method.IsStatic ? null : instance, methodArgs ?? Array.Empty<object?>());
     }
 }
