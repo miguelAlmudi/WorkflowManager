@@ -89,6 +89,27 @@ app.MapGet("/debug-all-types", () =>
     });
 });
 
+/*
+app.MapGet("/debug-activities", async (IActivityRegistry registry) =>
+{
+    var descriptors = await registry.ListAsync();
+
+    return Results.Ok(
+        descriptors
+            .Select(x => new
+            {
+                x.TypeName,
+                x.Name,
+                x.DisplayName,
+                x.Category
+            })
+            .OrderBy(x => x.Category)
+            .ThenBy(x => x.DisplayName)
+            .ToArray()
+    );
+});
+*/
+
 app.MapGet("/debug-loaded-assemblies", () =>
 {
     return Results.Ok(new
@@ -116,6 +137,50 @@ app.MapGet("/debug-loaded-namespaces", () =>
             .OrderBy(x => x)
             .ToArray()
     });
+});
+
+app.MapGet("/debug-elsa-types", () =>
+{
+    var result = AppDomain.CurrentDomain.GetAssemblies()
+        .Where(a =>
+        {
+            var name = a.GetName().Name ?? "";
+            return name.StartsWith("Elsa.", StringComparison.OrdinalIgnoreCase);
+        })
+        .OrderBy(a => a.GetName().Name)
+        .Select(a =>
+        {
+            Type[] types;
+            try
+            {
+                types = a.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                types = ex.Types.Where(t => t != null).Cast<Type>().ToArray();
+            }
+
+            return new
+            {
+                Assembly = a.GetName().Name,
+                Types = types
+                    .Where(t => t.Name.Contains("Sequence", StringComparison.OrdinalIgnoreCase)
+                             || t.FullName!.Contains("SetVariable", StringComparison.OrdinalIgnoreCase)
+                             || t.FullName!.Contains("WriteLine", StringComparison.OrdinalIgnoreCase))
+                    .Select(t => new
+                    {
+                        t.FullName,
+                        t.Namespace,
+                        t.Name
+                    })
+                    .OrderBy(t => t.FullName)
+                    .ToArray()
+            };
+        })
+        .Where(x => x.Types.Any())
+        .ToArray();
+
+    return Results.Ok(result);
 });
 
 app.MapGet("/debug-find-types/{name}", (string name) =>
