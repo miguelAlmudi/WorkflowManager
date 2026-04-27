@@ -7,6 +7,9 @@ using WorkflowManager.Components;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.Json;
+using WorkflowManager.Activities;
+using Elsa.Workflows.Helpers;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,10 +40,15 @@ builder.Services.AddElsa(elsa =>
             options.Namespaces.Add(ns);
     });
 
+    elsa.AddActivity<SomarActivity>();
+    elsa.AddActivity<CalculoActivity>();
     elsa.AddActivitiesFrom<Program>();
 });
 
 var app = builder.Build();
+
+Console.WriteLine("SomarActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<SomarActivity>());
+Console.WriteLine("CalculoActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<CalculoActivity>());
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
