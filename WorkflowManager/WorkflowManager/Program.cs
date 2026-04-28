@@ -10,6 +10,11 @@ using System.Text.Json;
 using WorkflowManager.Activities;
 using Elsa.Workflows.Helpers;
 using WorkflowManager.Endpoints;
+using Elsa.EntityFrameworkCore.Extensions;
+using Elsa.EntityFrameworkCore.Modules.Management;
+using Elsa.EntityFrameworkCore.Modules.Runtime;
+using Elsa.EntityFrameworkCore.Sqlite;
+using Microsoft.Data.Sqlite;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +24,8 @@ var projectRoot = builder.Environment.ContentRootPath;
 
 // Pasta libs dentro do projeto.
 var libsFolder = Path.Combine(projectRoot, "libs");
+
+var sqliteConnectionString = $"Data Source={Path.Combine(projectRoot, "elsa.db")}";
 
 // Inicializa o carregamento dinâmico de DLLs e namespaces.
 DynamicAssemblyRegistry.Initialize(libsFolder, typeof(Program).Assembly);
@@ -30,6 +37,25 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddElsa(elsa =>
 {
+    elsa.UseWorkflowManagement(management =>
+    {
+        management.UseEntityFrameworkCore(ef =>
+        {
+            ef.UseSqlite(sqliteConnectionString);
+            ef.RunMigrations = true;
+        });
+    });
+
+    elsa.UseWorkflowRuntime(runtime =>
+    {
+        runtime.UseEntityFrameworkCore(ef =>
+        {
+            ef.UseSqlite(sqliteConnectionString);
+            ef.RunMigrations = true;
+        });
+    });
+
+
     elsa.UseJavaScript();
 
     elsa.UseCSharp(options =>
@@ -147,6 +173,53 @@ app.MapGet("/debug-loaded-namespaces", () =>
         Namespaces = DynamicAssemblyRegistry.AllNamespaces
             .OrderBy(x => x)
             .ToArray()
+    });
+});
+
+app.MapGet("/debug-sqlite", async () =>
+{
+    var dbPath = Path.Combine(projectRoot, "elsa.db");
+    var connectionString = $"Data Source={dbPath}";
+
+    var result = new List<object>();
+
+    await using var connection = new SqliteConnection(connectionString);
+    await connection.OpenAsync();
+
+    var tablesCommand = connection.CreateCommand();
+    tablesCommand.CommandText = """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+        ORDER BY name
+    """;
+
+    var tableNames = new List<string>();
+
+    await using (var reader = await tablesCommand.ExecuteReaderAsync())
+    {
+        while (await reader.ReadAsync())
+            tableNames.Add(reader.GetString(0));
+    }
+
+    foreach (var table in tableNames)
+    {
+        var countCommand = connection.CreateCommand();
+        countCommand.CommandText = $"SELECT COUNT(*) FROM [{table}]";
+
+        var count = Convert.ToInt64(await countCommand.ExecuteScalarAsync());
+
+        result.Add(new
+        {
+            Table = table,
+            Count = count
+        });
+    }
+
+    return Results.Ok(new
+    {
+        Database = dbPath,
+        Tables = result
     });
 });
 

@@ -1,0 +1,119 @@
+{
+  "id": "TesteBookmark-v1",
+  "definitionId": "TesteBookmark",
+  "name": "Teste Bookmark",
+  "version": 1,
+  "isPublished": true,
+  "isLatest": true,
+  "variables": [
+    {
+      "id": "var-signal",
+      "name": "SignalName",
+      "typeName": "String",
+      "isArray": false,
+      "storageDriverTypeName": "Elsa.Workflows.WorkflowInstanceStorageDriver, Elsa.Workflows.Core"
+    },
+    {
+      "id": "var-message",
+      "name": "MensagemRecebida",
+      "typeName": "String",
+      "isArray": false,
+      "storageDriverTypeName": "Elsa.Workflows.WorkflowInstanceStorageDriver, Elsa.Workflows.Core"
+    }
+  ],
+  "inputs": [],
+  "outputs": [],
+  "outcomes": [],
+  "root": {
+    "id": "Flowchart1",
+    "name": "Flowchart1",
+    "type": "Elsa.Flowchart",
+    "version": 1,
+    "activities": [
+      {
+        "id": "DefinirSignal",
+        "name": "DefinirSignal",
+        "type": "Elsa.SetVariable",
+        "version": 1,
+        "variable": {
+          "id": "var-signal",
+          "name": "SignalName",
+          "typeName": "String",
+          "storageDriverTypeName": "Elsa.Workflows.WorkflowInstanceStorageDriver, Elsa.Workflows.Core"
+        },
+        "value": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "teste-bookmark"
+          }
+        }
+      },
+      {
+        "id": "AntesDoBookmark",
+        "name": "AntesDoBookmark",
+        "type": "Elsa.WriteLine",
+        "version": 1,
+        "text": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "Antes do bookmark"
+          }
+        }
+      },
+      {
+        "id": "AguardarSinal",
+        "name": "AguardarSinal",
+        "type": "BionicCrow.WaitForSignalActivity",
+        "version": 1,
+        "signalName": {
+          "typeName": "String",
+          "expression": {
+            "type": "CSharp",
+            "value": "Variable.Get<string>(\"SignalName\")"
+          }
+        },
+        "message": {
+          "typeName": "String",
+          "memoryReference": {
+            "id": "var-message"
+          }
+        }
+      },
+      {
+        "id": "DepoisDoBookmark",
+        "name": "DepoisDoBookmark",
+        "type": "Elsa.WriteLine",
+        "version": 1,
+        "text": {
+          "typeName": "String",
+          "expression": {
+            "type": "CSharp",
+            "value": "\"Depois do bookmark. Mensagem: \" + Variable.Get<string>(\"MensagemRecebida\")"
+          }
+        }
+      }
+    ],
+    "connections": [
+      {
+        "source": "DefinirSignal",
+        "target": "AntesDoBookmark",
+        "sourcePort": "Done",
+        "targetPort": "In"
+      },
+      {
+        "source": "AntesDoBookmark",
+        "target": "AguardarSinal",
+        "sourcePort": "Done",
+        "targetPort": "In"
+      },
+      {
+        "source": "AguardarSinal",
+        "target": "DepoisDoBookmark",
+        "sourcePort": "Done",
+        "targetPort": "In"
+      }
+    ]
+  }
+}
