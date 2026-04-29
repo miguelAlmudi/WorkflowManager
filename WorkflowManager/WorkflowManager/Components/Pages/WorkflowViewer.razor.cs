@@ -6,6 +6,7 @@ using Elsa.Workflows.Management.Mappers;
 using Elsa.Workflows.Management.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Components;
+using System.Net.Http.Json;
 
 namespace WorkflowManager.Components.Pages
 {
@@ -35,6 +36,7 @@ namespace WorkflowManager.Components.Pages
         private double CanvasHeight = 900;
 
         [Inject] public IServiceProvider Services { get; set; } = default!;
+        [Inject] public HttpClient Http { get; set; } = default!;
 
         private string? RawWorkflowJson;
         private string? ExecutionStateJson;
@@ -90,6 +92,70 @@ namespace WorkflowManager.Components.Pages
                 HasError = true;
                 StatusMessage = $"Erro ao processar o workflow: {ex.Message}";
             }
+        }
+
+        private TestObjectViewModel TestObject { get; set; } = new()
+        {
+            ObjectId = "objeto-teste",
+            Name = "Nome inicial",
+            Description = "Descrição inicial"
+        };
+
+        private string? ObjectWorkflowStatus;
+        private string? LastObjectWorkflowResponse;
+
+        private async Task OnTestObjectNameChanged(ChangeEventArgs e)
+        {
+            TestObject.Name = e.Value?.ToString() ?? "";
+
+            await SendObjectFieldSignalAsync("name", TestObject.Name);
+        }
+
+        private async Task OnTestObjectDescriptionChanged(ChangeEventArgs e)
+        {
+            TestObject.Description = e.Value?.ToString() ?? "";
+
+            await SendObjectFieldSignalAsync("description", TestObject.Description);
+        }
+
+        private async Task SendObjectFieldSignalAsync(string field, string value)
+        {
+            try
+            {
+                var request = new ObjectFieldChangeRequestClient
+                {
+                    ObjectId = TestObject.ObjectId,
+                    Field = field,
+                    Value = value
+                };
+
+                var response = await Http.PostAsJsonAsync("/api/object-workflow/signal", request);
+                var responseText = await response.Content.ReadAsStringAsync();
+
+                LastObjectWorkflowResponse = responseText;
+
+                ObjectWorkflowStatus = response.IsSuccessStatusCode
+                    ? $"Sinal enviado: {field}"
+                    : $"Erro ao enviar sinal: {response.StatusCode}";
+            }
+            catch (Exception ex)
+            {
+                ObjectWorkflowStatus = $"Erro: {ex.Message}";
+            }
+        }
+
+        private sealed class TestObjectViewModel
+        {
+            public string ObjectId { get; set; } = "";
+            public string Name { get; set; } = "";
+            public string Description { get; set; } = "";
+        }
+
+        private sealed class ObjectFieldChangeRequestClient
+        {
+            public string ObjectId { get; set; } = "";
+            public string Field { get; set; } = "";
+            public string? Value { get; set; }
         }
 
         private async Task ExecuteWorkflowAsync()

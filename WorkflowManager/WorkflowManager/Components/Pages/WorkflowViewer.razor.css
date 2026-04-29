@@ -284,3 +284,39 @@
     box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
     z-index: 2;
 }
+
+.object-test-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    width: 360px;
+    z-index: 9999;
+    background: #1f2937;
+    color: #f9fafb;
+    border: 1px solid #374151;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+    .object-test-panel .form-label {
+        color: #d1d5db;
+        font-size: 0.875rem;
+    }
+
+    .object-test-panel .form-control {
+        background: #111827;
+        color: #f9fafb;
+        border-color: #4b5563;
+    }
+
+.object-test-response {
+    margin-top: 12px;
+    max-height: 180px;
+    overflow: auto;
+    font-size: 0.75rem;
+    background: #111827;
+    color: #d1d5db;
+    padding: 8px;
+    border-radius: 8px;
+}

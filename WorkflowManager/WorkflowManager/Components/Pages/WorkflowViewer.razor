@@ -202,6 +202,42 @@
             </details>
         </div>
 
+        <div class="object-test-panel">
+            <h5>Objeto de teste</h5>
+
+            <div class="mb-2">
+                <label class="form-label">ObjectId</label>
+                <input class="form-control"
+                       value="@TestObject.ObjectId"
+                       readonly />
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">Nome</label>
+                <input class="form-control"
+                       value="@TestObject.Name"
+                       @onchange="OnTestObjectNameChanged" />
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">Descrição</label>
+                <textarea class="form-control"
+                          rows="3"
+                          @onchange="OnTestObjectDescriptionChanged">@TestObject.Description</textarea>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(ObjectWorkflowStatus))
+            {
+                <div class="alert alert-info mt-2">
+                    @ObjectWorkflowStatus
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(LastObjectWorkflowResponse))
+            {
+                <pre class="object-test-response">@LastObjectWorkflowResponse</pre>
+            }
+        </div>
     }
 </div>
 

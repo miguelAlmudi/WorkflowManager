@@ -15,6 +15,7 @@ using Elsa.EntityFrameworkCore.Modules.Management;
 using Elsa.EntityFrameworkCore.Modules.Runtime;
 using Elsa.EntityFrameworkCore.Sqlite;
 using Microsoft.Data.Sqlite;
+using Microsoft.AspNetCore.Components;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -34,6 +35,16 @@ DynamicAssemblyRegistry.Initialize(libsFolder, typeof(Program).Assembly);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
+builder.Services.AddScoped<HttpClient>(sp =>
+{
+    var navigationManager = sp.GetRequiredService<NavigationManager>();
+
+    return new HttpClient
+    {
+        BaseAddress = new Uri(navigationManager.BaseUri)
+    };
+});
+
 
 builder.Services.AddElsa(elsa =>
 {
@@ -70,6 +81,7 @@ builder.Services.AddElsa(elsa =>
     elsa.AddActivity<SomarActivity>();
     elsa.AddActivity<CalculoActivity>();
     elsa.AddActivity<WaitForSignalActivity>();
+    elsa.AddActivity<WaitForObjectFieldsActivity>();
     elsa.AddActivitiesFrom<Program>();
 });
 
@@ -78,6 +90,7 @@ var app = builder.Build();
 Console.WriteLine("SomarActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<SomarActivity>());
 Console.WriteLine("CalculoActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<CalculoActivity>());
 Console.WriteLine("WaitForSignalActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<WaitForSignalActivity>());
+Console.WriteLine("WaitForObjectFieldsActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<WaitForObjectFieldsActivity>());
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -283,6 +296,7 @@ app.MapGet("/debug-find-types/{name}", (string name) =>
 });
 
 app.MapBookmarkEndpoints();
+app.MapObjectWorkflowEndpoints();
 
 app.Run();
 
