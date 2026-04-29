@@ -1,15 +1,12 @@
 {
   "id": "teste-object-fields-bookmark",
   "definitionId": "TesteObjectFieldsBookmark",
-  "name": "Teste - Bookmark Nome e Descrição",
-  "description": "Workflow local para testar bookmark com alteração de nome e descrição pelo Blazor.",
   "version": 1,
   "isLatest": true,
   "isPublished": true,
   "root": {
     "id": "wait-object-fields",
     "type": "BionicCrow.WaitForObjectFieldsActivity",
-    "name": "Aguardar Nome e Descrição",
     "objectId": {
       "typeName": "String",
       "expression": {

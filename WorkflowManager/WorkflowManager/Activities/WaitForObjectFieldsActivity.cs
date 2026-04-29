@@ -16,10 +16,10 @@ public class WaitForObjectFieldsActivity : Activity
     public Input<string> ObjectId { get; set; } = new("objeto-teste");
 
     [Output(Description = "Nome final recebido")]
-    public Output<string> Name { get; set; } = default!;
+    public Output<string> FinalObjectName { get; set; } = default!;
 
     [Output(Description = "Descrição final recebida")]
-    public Output<string> Description { get; set; } = default!;
+    public Output<string> FinalObjectDescription { get; set; } = default!;
 
     [Output(Description = "Quantidade de campos distintos recebidos")]
     public Output<int> SignalCount { get; set; } = default!;
@@ -64,8 +64,8 @@ public class WaitForObjectFieldsActivity : Activity
                 .Last()
                 .Value;
 
-            Name.Set(context, finalName);
-            Description.Set(context, finalDescription);
+            FinalObjectName.Set(context, finalName);
+            FinalObjectDescription.Set(context, finalDescription);
 
             var distinctCount = signals
                 .Where(x => x.ObjectId == objectId)
