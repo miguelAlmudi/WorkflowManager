@@ -99,6 +99,10 @@
                 </div>
             </div>
         }
+        <button class="btn btn-primary mb-2"
+                @onclick="StartObjectWorkflowAsync">
+            Iniciar workflow deste objeto
+        </button>
 
         <div class="wf-section">
             <div class="wf-section-title">Grafo interativo</div>
@@ -206,24 +210,55 @@
             <h5>Objeto de teste</h5>
 
             <div class="mb-2">
+                <label class="form-label">Selecionar objeto</label>
+                <select class="form-control"
+                        value="@TestObject.ObjectId"
+                        @onchange="OnObjectSelected">
+                    @foreach (var obj in AvailableObjects)
+                    {
+                        <option value="@obj.ObjectId">
+                            @obj.ObjectId - @obj.Name
+                        </option>
+                    }
+                </select>
+            </div>
+
+            <div class="mb-2">
                 <label class="form-label">ObjectId</label>
                 <input class="form-control"
-                       value="@TestObject.ObjectId"
-                       readonly />
+                       @bind="TestObject.ObjectId" />
             </div>
 
             <div class="mb-2">
                 <label class="form-label">Nome</label>
                 <input class="form-control"
-                       value="@TestObject.Name"
-                       @onchange="OnTestObjectNameChanged" />
+                       @bind="TestObject.Name"
+                       @bind:event="oninput" />
             </div>
 
             <div class="mb-2">
                 <label class="form-label">Descrição</label>
                 <textarea class="form-control"
                           rows="3"
-                          @onchange="OnTestObjectDescriptionChanged">@TestObject.Description</textarea>
+                          @bind="TestObject.Description"
+                          @bind:event="oninput"></textarea>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap mt-2">
+                <button class="btn btn-sm btn-success"
+                        @onclick="StartObjectWorkflowAsync">
+                    Iniciar workflow
+                </button>
+
+                <button class="btn btn-sm btn-primary"
+                        @onclick='() => SendObjectFieldSignalAsync("name", TestObject.Name)'>
+                    Enviar Nome
+                </button>
+
+                <button class="btn btn-sm btn-primary"
+                        @onclick='() => SendObjectFieldSignalAsync("description", TestObject.Description)'>
+                    Enviar Descrição
+                </button>
             </div>
 
             @if (!string.IsNullOrWhiteSpace(ObjectWorkflowStatus))

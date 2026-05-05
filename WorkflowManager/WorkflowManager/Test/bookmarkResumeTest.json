@@ -1,0 +1,19 @@
+{
+  "id": "workflow-edicao-objeto-001-v1",
+  "definitionId": "WorkflowEdicaoObjeto001",
+  "version": 1,
+  "isLatest": true,
+  "isPublished": true,
+  "root": {
+    "id": "objeto-001",
+    "type": "BionicCrow.WaitForObjectFieldsActivity",
+    "displayName": "Aguardar alteração de Nome e Descrição",
+    "objectId": {
+      "typeName": "String",
+      "expression": {
+        "type": "Literal",
+        "value": "objeto-001"
+      }
+    }
+  }
+}

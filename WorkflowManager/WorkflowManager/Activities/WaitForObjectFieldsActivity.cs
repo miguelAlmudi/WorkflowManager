@@ -2,6 +2,7 @@
 using Elsa.Workflows;
 using Elsa.Workflows.Attributes;
 using Elsa.Workflows.Models;
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace WorkflowManager.Activities;
@@ -39,18 +40,22 @@ public class WaitForObjectFieldsActivity : Activity
 
     private async ValueTask ProcessOrWaitAsync(ActivityExecutionContext context)
     {
-        var objectId = context.Get(ObjectId) ?? "objeto-teste";
+        var objectId = context.Get(ObjectId) ?? "objeto-001";
 
-        var signals =
-            context.GetVariable<List<ObjectFieldSignal>>(StateVariableName)
-            ?? new List<ObjectFieldSignal>();
+        var signals = SignalStore.GetOrAdd(objectId, _ => new List<ObjectFieldSignal>());
 
-        AddSignalFromInput(context, objectId, signals);
-
-        context.SetVariable(StateVariableName, signals);
+        lock (signals)
+        {
+            AddSignalFromInput(context, objectId, signals);
+        }
 
         var hasName = signals.Any(x => x.ObjectId == objectId && x.Field == "name");
         var hasDescription = signals.Any(x => x.ObjectId == objectId && x.Field == "description");
+
+        Console.WriteLine($"[WaitForObjectFieldsActivity] ObjectId: {objectId}");
+        Console.WriteLine($"[WaitForObjectFieldsActivity] HasName: {hasName}");
+        Console.WriteLine($"[WaitForObjectFieldsActivity] HasDescription: {hasDescription}");
+        Console.WriteLine($"[WaitForObjectFieldsActivity] Signals: {JsonSerializer.Serialize(signals)}");
 
         if (hasName && hasDescription)
         {
@@ -67,19 +72,11 @@ public class WaitForObjectFieldsActivity : Activity
             FinalObjectName.Set(context, finalName);
             FinalObjectDescription.Set(context, finalDescription);
 
-            var distinctCount = signals
-                .Where(x => x.ObjectId == objectId)
-                .Select(x => x.Field)
-                .Distinct()
-                .Count();
+            SignalCount.Set(context, 2);
 
-            SignalCount.Set(context, distinctCount);
-
-            var signalsJson = JsonSerializer.Serialize(
+            SignalsJson.Set(context, JsonSerializer.Serialize(
                 signals,
-                new JsonSerializerOptions { WriteIndented = true });
-
-            SignalsJson.Set(context, signalsJson);
+                new JsonSerializerOptions { WriteIndented = true }));
 
             Console.WriteLine("=================================");
             Console.WriteLine("[Workflow finalizado]");
@@ -88,9 +85,7 @@ public class WaitForObjectFieldsActivity : Activity
             Console.WriteLine($"Descrição: {finalDescription}");
             Console.WriteLine("=================================");
 
-            context.AddExecutionLogEntry(
-                "Info",
-                $"Workflow finalizado. Nome='{finalName}', Descrição='{finalDescription}'.");
+            SignalStore.TryRemove(objectId, out _);
 
             await context.CompleteActivityAsync();
             return;
@@ -98,17 +93,9 @@ public class WaitForObjectFieldsActivity : Activity
 
         var bookmarkName = BuildBookmarkName(objectId);
 
+        Console.WriteLine($"[WaitForObjectFieldsActivity] Criando bookmark: {bookmarkName}");
+
         context.CreateBookmark(bookmarkName, OnResumeAsync);
-
-        var received = signals
-            .Where(x => x.ObjectId == objectId)
-            .Select(x => x.Field)
-            .Distinct()
-            .ToArray();
-
-        context.AddExecutionLogEntry(
-            "Info",
-            $"Aguardando sinais do objeto '{objectId}'. Recebidos: [{string.Join(", ", received)}].");
     }
 
     private static string BuildBookmarkName(string objectId)
@@ -182,6 +169,8 @@ public class WaitForObjectFieldsActivity : Activity
         });
     }
 
+    private static readonly ConcurrentDictionary<string, List<ObjectFieldSignal>> SignalStore = new();
+
     private static string? NormalizeField(string? field)
     {
         if (string.IsNullOrWhiteSpace(field))
@@ -213,17 +202,23 @@ public class WaitForObjectFieldsActivity : Activity
             _ => value.ToString()
         };
     }
-}
 
-public sealed class ObjectFieldBookmarkPayload
-{
-    public string ObjectId { get; set; } = "";
-}
 
-public sealed class ObjectFieldSignal
-{
-    public string ObjectId { get; set; } = "";
-    public string Field { get; set; } = "";
-    public string Value { get; set; } = "";
-    public DateTimeOffset ReceivedAt { get; set; }
+    public static void ClearSignals(string objectId)
+    {
+        SignalStore.TryRemove(objectId, out _);
+    }
+
+    public sealed class ObjectFieldBookmarkPayload
+    {
+        public string ObjectId { get; set; } = "";
+    }
+
+    public sealed class ObjectFieldSignal
+    {
+        public string ObjectId { get; set; } = "";
+        public string Field { get; set; } = "";
+        public string Value { get; set; } = "";
+        public DateTimeOffset ReceivedAt { get; set; }
+    }
 }

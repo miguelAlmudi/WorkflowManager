@@ -96,13 +96,42 @@ namespace WorkflowManager.Components.Pages
 
         private TestObjectViewModel TestObject { get; set; } = new()
         {
-            ObjectId = "objeto-teste",
-            Name = "Nome inicial",
-            Description = "Descrição inicial"
+            ObjectId = "objeto-001",
+            Name = "Motor",
+            Description = "Motor principal"
         };
 
         private string? ObjectWorkflowStatus;
         private string? LastObjectWorkflowResponse;
+
+        private async Task StartObjectWorkflowAsync()
+        {
+            try
+            {
+                var request = new ObjectWorkflowStartRequestClient
+                {
+                    ObjectId = TestObject.ObjectId
+                };
+
+                var response = await Http.PostAsJsonAsync("api/object-workflow/start", request);
+                var responseText = await response.Content.ReadAsStringAsync();
+
+                LastObjectWorkflowResponse = responseText;
+
+                ObjectWorkflowStatus = response.IsSuccessStatusCode
+                    ? $"Workflow iniciado para o objeto {TestObject.ObjectId}."
+                    : $"Erro ao iniciar workflow: {response.StatusCode}";
+            }
+            catch (Exception ex)
+            {
+                ObjectWorkflowStatus = $"Erro: {ex.Message}";
+            }
+        }
+
+        private sealed class ObjectWorkflowStartRequestClient
+        {
+            public string ObjectId { get; set; } = "";
+        }
 
         private async Task OnTestObjectNameChanged(ChangeEventArgs e)
         {
@@ -217,7 +246,7 @@ namespace WorkflowManager.Components.Pages
                 X = CanvasPadding,
                 Y = CanvasPadding,
                 Kind = "root",
-                Highlights = new List<ActivityHighlight>()
+                Highlights = Workflow.RootHighlights
             });
 
             foreach (var activity in Workflow.Activities)
@@ -297,11 +326,72 @@ namespace WorkflowManager.Components.Pages
         private void SelectNode(GraphNode node)
         {
             SelectedNodeId = node.Id;
+
+            var objectId = TryGetObjectIdFromNode(node);
+
+            if (string.IsNullOrWhiteSpace(objectId))
+            {
+                ObjectWorkflowStatus = $"Nó selecionado: {node.Label}. Este nó não possui ObjectId.";
+                return;
+            }
+
+            TestObject.ObjectId = objectId;
+
+            ObjectWorkflowStatus = $"Objeto selecionado pelo workflow: {objectId}";
+        }
+
+        private static string? TryGetObjectIdFromNode(GraphNode node)
+        {
+            var highlight = node.Highlights.FirstOrDefault(x =>
+                x.Key.Equals("Object Id", StringComparison.OrdinalIgnoreCase) ||
+                x.Key.Equals("ObjectId", StringComparison.OrdinalIgnoreCase) ||
+                x.Key.Equals("Object id", StringComparison.OrdinalIgnoreCase));
+
+            if (highlight is null)
+                return null;
+
+            return NormalizeObjectIdPreview(highlight.Value);
+        }
+
+        private static string? NormalizeObjectIdPreview(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            value = value.Trim();
+
+            // Caso venha só "objeto-teste".
+            if (!value.StartsWith("{"))
+                return value;
+
+            // Caso venha como JSON/expressão do Elsa.
+            try
+            {
+                using var document = JsonDocument.Parse(value);
+
+                if (document.RootElement.TryGetProperty("expression", out var expression) &&
+                    expression.TryGetProperty("value", out var expressionValue))
+                {
+                    return expressionValue.ToString();
+                }
+
+                if (document.RootElement.TryGetProperty("value", out var rawValue))
+                {
+                    return rawValue.ToString();
+                }
+            }
+            catch
+            {
+                // Se não for JSON válido, usa o texto bruto.
+            }
+
+            return value;
         }
 
         private void StartDrag(GraphNode node, MouseEventArgs e)
         {
-            SelectedNodeId = node.Id;
+            SelectNode(node);
+
             _draggingNodeId = node.Id;
             _lastMouseX = e.ClientX;
             _lastMouseY = e.ClientY;
@@ -389,6 +479,8 @@ namespace WorkflowManager.Components.Pages
                     GetString(rootActivity, "name") ??
                     GetString(rootActivity, "displayName") ??
                     model.RootType;
+
+                model.RootHighlights = ExtractHighlights(rootActivity);
 
                 var activities = new List<ActivityNode>();
                 var structuralConnections = new List<ConnectionInfo>();
@@ -632,11 +724,12 @@ namespace WorkflowManager.Components.Pages
             var result = new List<ActivityHighlight>();
 
             var preferredProperties = new[]
-            {
-            "text", "path", "url", "condition", "variable", "value",
-            "method", "message", "statusCodes", "canStartWorkflow",
-            "cronExpression", "delay", "content", "name"
-        };
+             {
+                "objectId",
+                "text", "path", "url", "condition", "variable", "value",
+                "method", "message", "statusCodes", "canStartWorkflow",
+                "cronExpression", "delay", "content", "name"
+            };
 
             foreach (var propertyName in preferredProperties)
             {
@@ -864,6 +957,51 @@ namespace WorkflowManager.Components.Pages
             CanvasHeight = 900;
         }
 
+        private List<TestObjectViewModel> AvailableObjects { get; set; } = new()
+        {
+            new TestObjectViewModel
+            {
+                ObjectId = "objeto-001",
+                Name = "Motor",
+                Description = "Motor principal"
+            },
+            new TestObjectViewModel
+            {
+                ObjectId = "objeto-002",
+                Name = "Sensor",
+                Description = "Sensor de temperatura"
+            },
+            new TestObjectViewModel
+            {
+                ObjectId = "objeto-003",
+                Name = "Controlador",
+                Description = "Controlador eletrônico"
+            }
+        };
+
+        private void OnObjectSelected(ChangeEventArgs e)
+        {
+            var selectedObjectId = e.Value?.ToString();
+
+            if (string.IsNullOrWhiteSpace(selectedObjectId))
+                return;
+
+            var selectedObject = AvailableObjects
+                .FirstOrDefault(x => x.ObjectId == selectedObjectId);
+
+            if (selectedObject is null)
+                return;
+
+            TestObject = new TestObjectViewModel
+            {
+                ObjectId = selectedObject.ObjectId,
+                Name = selectedObject.Name,
+                Description = selectedObject.Description
+            };
+
+            ObjectWorkflowStatus = $"Objeto selecionado: {TestObject.ObjectId}";
+        }
+
         private sealed class WorkflowViewModel
         {
             public string? WorkflowId { get; set; }
@@ -872,6 +1010,7 @@ namespace WorkflowManager.Components.Pages
             public string? RootId { get; set; }
             public string? RootType { get; set; }
             public string? RootDisplayName { get; set; }
+            public List<ActivityHighlight> RootHighlights { get; set; } = new();
             public List<ActivityNode> Activities { get; set; } = new();
             public List<ConnectionInfo> Connections { get; set; } = new();
         }

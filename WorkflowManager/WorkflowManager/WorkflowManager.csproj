@@ -16,4 +16,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.22" />
   </ItemGroup>
 
+	<ItemGroup>
+		<Content Include="Workflows\*.json" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
+
 </Project>
