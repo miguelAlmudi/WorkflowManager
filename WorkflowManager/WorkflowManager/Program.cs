@@ -83,7 +83,12 @@ builder.Services.AddElsa(elsa =>
     elsa.AddActivity<CalculoActivity>();
     elsa.AddActivity<WaitForSignalActivity>();
     elsa.AddActivity<WaitForObjectFieldsActivity>();
-    elsa.AddWorkflow<ObjectFieldsWorkflow>();
+    elsa.AddWorkflow<ObjectFieldsWorkflowMotor>();
+    elsa.AddWorkflow<ObjectFieldsWorkflowSensor>();
+    elsa.AddWorkflow<ObjectFieldsWorkflowControlador>();
+
+    elsa.AddActivity<WaitForSumValuesActivity>();
+    elsa.AddWorkflow<SumWorkflow>();
 
     elsa.AddActivitiesFrom<Program>();
 });
@@ -300,6 +305,8 @@ app.MapGet("/debug-find-types/{name}", (string name) =>
 
 app.MapBookmarkEndpoints();
 app.MapObjectWorkflowEndpoints();
+app.MapSumWorkflowEndpoints();
+app.MapGenericWorkflowEndpoints();
 
 app.Run();
 

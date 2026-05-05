@@ -19,13 +19,31 @@ public static class ObjectWorkflowEndpoints
                 ? "objeto-001"
                 : request.ObjectId;
 
+            var definitionId = objectId switch
+            {
+                "objeto-001" => "ObjectFieldsWorkflowMotor",
+                "objeto-002" => "ObjectFieldsWorkflowSensor",
+                "objeto-003" => "ObjectFieldsWorkflowControlador",
+                _ => ""
+            };
+
+            if (string.IsNullOrWhiteSpace(definitionId))
+            {
+                return Results.BadRequest(new
+                {
+                    message = $"Não existe workflow de teste registrado para o objeto '{objectId}'.",
+                    objectId
+                });
+            }
+
+            // Limpa sinais antigos em memória antes de iniciar um novo teste.
             WaitForObjectFieldsActivity.ClearSignals(objectId);
 
             var client = await workflowRuntime.CreateClientAsync();
 
             var result = await client.CreateAndRunInstanceAsync(new CreateAndRunWorkflowInstanceRequest
             {
-                WorkflowDefinitionHandle = WorkflowDefinitionHandle.ByDefinitionId("ObjectFieldsWorkflow"),
+                WorkflowDefinitionHandle = WorkflowDefinitionHandle.ByDefinitionId(definitionId),
                 CorrelationId = objectId
             });
 
@@ -33,7 +51,7 @@ public static class ObjectWorkflowEndpoints
             {
                 message = "Workflow iniciado pelo runtime.",
                 objectId,
-                definitionId = "ObjectFieldsWorkflow",
+                definitionId,
                 bookmarkName = $"ObjectFieldChanged:{objectId}",
                 result
             });
@@ -79,6 +97,10 @@ public static class ObjectWorkflowEndpoints
 
             var result = await workflowResumer.ResumeAsync(bookmarkId, input);
 
+            var message = result.Bookmarks?.Any() == true
+                ? "Workflow ainda está aguardando outro sinal."
+                : "Workflow finalizado com sucesso.";
+
             return Results.Ok(new
             {
                 objectId = request.ObjectId,
@@ -87,7 +109,7 @@ public static class ObjectWorkflowEndpoints
                 field = normalizedField,
                 value = request.Value,
                 result,
-                message = "Bookmark mais recente retomado com sucesso."
+                message
             });
         });
 

@@ -74,6 +74,14 @@ namespace WorkflowManager.Components.Pages
                 Workflow = BuildWorkflowViewModel(document.RootElement);
                 BuildGraphLayout();
 
+                BookmarkTest.DefinitionId = Workflow?.DefinitionId ?? "";
+                BookmarkTest.CorrelationId = "";
+                BookmarkTest.BookmarkName = "";
+                BookmarkTest.IdentityKey = "";
+                BookmarkTest.IdentityValue = "";
+                BookmarkTest.Field = "";
+                BookmarkTest.Value = "";
+
                 HasError = false;
                 StatusMessage = "Workflow carregado com sucesso.";
             }
@@ -92,6 +100,28 @@ namespace WorkflowManager.Components.Pages
                 HasError = true;
                 StatusMessage = $"Erro ao processar o workflow: {ex.Message}";
             }
+        }
+
+        private BookmarkTestViewModel BookmarkTest { get; set; } = new()
+        {
+            DefinitionId = "",
+            CorrelationId = "",
+            BookmarkName = "",
+            IdentityKey = "",
+            IdentityValue = "",
+            Field = "",
+            Value = ""
+        };
+
+        private sealed class BookmarkTestViewModel
+        {
+            public string DefinitionId { get; set; } = "";
+            public string CorrelationId { get; set; } = "";
+            public string BookmarkName { get; set; } = "";
+            public string IdentityKey { get; set; } = "";
+            public string IdentityValue { get; set; } = "";
+            public string Field { get; set; } = "";
+            public string Value { get; set; } = "";
         }
 
         private TestObjectViewModel TestObject { get; set; } = new()
@@ -323,21 +353,154 @@ namespace WorkflowManager.Components.Pages
             AutoArrangeNodes();
         }
 
+        private async Task StartGenericWorkflowAsync()
+        {
+            try
+            {
+                var request = new GenericWorkflowStartRequestClient
+                {
+                    DefinitionId = BookmarkTest.DefinitionId,
+                    CorrelationId = BookmarkTest.CorrelationId
+                };
+
+                var response = await Http.PostAsJsonAsync("api/generic-workflow/start", request);
+                var responseText = await response.Content.ReadAsStringAsync();
+
+                LastObjectWorkflowResponse = responseText;
+
+                ObjectWorkflowStatus = response.IsSuccessStatusCode
+                    ? $"Workflow iniciado: {BookmarkTest.DefinitionId}"
+                    : $"Erro ao iniciar workflow: {response.StatusCode}";
+            }
+            catch (Exception ex)
+            {
+                ObjectWorkflowStatus = $"Erro: {ex.Message}";
+            }
+        }
+
+        private async Task SendGenericBookmarkSignalAsync()
+        {
+            try
+            {
+                var input = new Dictionary<string, object>
+                {
+                    [BookmarkTest.IdentityKey] = BookmarkTest.IdentityValue,
+                    ["Field"] = BookmarkTest.Field,
+                    ["Value"] = BookmarkTest.Value
+                };
+
+                var request = new GenericBookmarkSignalRequestClient
+                {
+                    BookmarkName = BookmarkTest.BookmarkName,
+                    Input = input
+                };
+
+                var response = await Http.PostAsJsonAsync("api/generic-workflow/signal", request);
+                var responseText = await response.Content.ReadAsStringAsync();
+
+                LastObjectWorkflowResponse = responseText;
+
+                ObjectWorkflowStatus = response.IsSuccessStatusCode
+                    ? $"Sinal enviado: {BookmarkTest.Field}"
+                    : $"Erro ao enviar sinal: {response.StatusCode}";
+            }
+            catch (Exception ex)
+            {
+                ObjectWorkflowStatus = $"Erro: {ex.Message}";
+            }
+        }
+
+        private sealed class GenericWorkflowStartRequestClient
+        {
+            public string DefinitionId { get; set; } = "";
+            public string CorrelationId { get; set; } = "";
+        }
+
+        private sealed class GenericBookmarkSignalRequestClient
+        {
+            public string BookmarkName { get; set; } = "";
+            public Dictionary<string, object> Input { get; set; } = new();
+        }
+
         private void SelectNode(GraphNode node)
         {
             SelectedNodeId = node.Id;
 
-            var objectId = TryGetObjectIdFromNode(node);
+            BookmarkTest.DefinitionId = Workflow?.DefinitionId ?? BookmarkTest.DefinitionId;
 
-            if (string.IsNullOrWhiteSpace(objectId))
+            var objectId = TryGetHighlightValue(node, "Object Id", "ObjectId", "Object id");
+            var calculationId = TryGetHighlightValue(node, "Calculation Id", "CalculationId", "Calculation id");
+
+            if (!string.IsNullOrWhiteSpace(objectId))
             {
-                ObjectWorkflowStatus = $"Nó selecionado: {node.Label}. Este nó não possui ObjectId.";
+                BookmarkTest.CorrelationId = objectId;
+                BookmarkTest.BookmarkName = $"ObjectFieldChanged:{objectId}";
+                BookmarkTest.IdentityKey = "ObjectId";
+                BookmarkTest.IdentityValue = objectId;
+                BookmarkTest.Field = "name";
+                BookmarkTest.Value = "";
+
+                ObjectWorkflowStatus = $"Nó selecionado: {node.Label}. Bookmark de objeto detectado.";
                 return;
             }
 
-            TestObject.ObjectId = objectId;
+            if (!string.IsNullOrWhiteSpace(calculationId))
+            {
+                BookmarkTest.CorrelationId = calculationId;
+                BookmarkTest.BookmarkName = $"SumValueChanged:{calculationId}";
+                BookmarkTest.IdentityKey = "CalculationId";
+                BookmarkTest.IdentityValue = calculationId;
+                BookmarkTest.Field = "a";
+                BookmarkTest.Value = "";
 
-            ObjectWorkflowStatus = $"Objeto selecionado pelo workflow: {objectId}";
+                ObjectWorkflowStatus = $"Nó selecionado: {node.Label}. Bookmark de soma detectado.";
+                return;
+            }
+
+            ObjectWorkflowStatus = $"Nó selecionado: {node.Label}. Preencha o bookmark manualmente.";
+        }
+
+        private static string? TryGetHighlightValue(GraphNode node, params string[] keys)
+        {
+            var highlight = node.Highlights.FirstOrDefault(x =>
+                keys.Any(k => x.Key.Equals(k, StringComparison.OrdinalIgnoreCase)));
+
+            if (highlight is null)
+                return null;
+
+            return NormalizeInputPreview(highlight.Value);
+        }
+
+        private static string? NormalizeInputPreview(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            value = value.Trim();
+
+            if (!value.StartsWith("{"))
+                return value;
+
+            try
+            {
+                using var document = JsonDocument.Parse(value);
+
+                if (document.RootElement.TryGetProperty("expression", out var expression) &&
+                    expression.TryGetProperty("value", out var expressionValue))
+                {
+                    return expressionValue.ToString();
+                }
+
+                if (document.RootElement.TryGetProperty("value", out var rawValue))
+                {
+                    return rawValue.ToString();
+                }
+            }
+            catch
+            {
+            }
+
+            return value;
         }
 
         private static string? TryGetObjectIdFromNode(GraphNode node)
@@ -724,8 +887,11 @@ namespace WorkflowManager.Components.Pages
             var result = new List<ActivityHighlight>();
 
             var preferredProperties = new[]
-             {
+            {
                 "objectId",
+                "calculationId",
+                "bookmarkName",
+                "signalName",
                 "text", "path", "url", "condition", "variable", "value",
                 "method", "message", "statusCodes", "canStartWorkflow",
                 "cronExpression", "delay", "content", "name"

@@ -1,0 +1,36 @@
+{
+  "id": "sum-bookmark-workflow-v1",
+  "definitionId": "SumBookmarkWorkflow",
+  "version": 1,
+  "isLatest": true,
+  "isPublished": true,
+  "root": {
+    "id": "soma-001",
+    "type": "BionicCrow.WaitForSumValuesActivity",
+    "displayName": "Aguardar valores A e B para soma",
+    "calculationId": {
+      "typeName": "String",
+      "expression": {
+        "type": "Literal",
+        "value": "soma-001"
+      }
+    },
+    "customProperties": {
+      "testPanel": {
+        "bookmarkName": "SumValueChanged:soma-001",
+        "identityKey": "CalculationId",
+        "identityValue": "soma-001",
+        "fields": [
+          {
+            "name": "a",
+            "label": "Valor A"
+          },
+          {
+            "name": "b",
+            "label": "Valor B"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -207,57 +207,66 @@
         </div>
 
         <div class="object-test-panel">
-            <h5>Objeto de teste</h5>
+            <h5>Teste genérico de bookmark</h5>
 
             <div class="mb-2">
-                <label class="form-label">Selecionar objeto</label>
-                <select class="form-control"
-                        value="@TestObject.ObjectId"
-                        @onchange="OnObjectSelected">
-                    @foreach (var obj in AvailableObjects)
-                    {
-                        <option value="@obj.ObjectId">
-                            @obj.ObjectId - @obj.Name
-                        </option>
-                    }
-                </select>
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">ObjectId</label>
+                <label class="form-label">DefinitionId</label>
                 <input class="form-control"
-                       @bind="TestObject.ObjectId" />
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">Nome</label>
-                <input class="form-control"
-                       @bind="TestObject.Name"
+                       @bind="BookmarkTest.DefinitionId"
                        @bind:event="oninput" />
             </div>
 
             <div class="mb-2">
-                <label class="form-label">Descrição</label>
-                <textarea class="form-control"
-                          rows="3"
-                          @bind="TestObject.Description"
-                          @bind:event="oninput"></textarea>
+                <label class="form-label">CorrelationId</label>
+                <input class="form-control"
+                       @bind="BookmarkTest.CorrelationId"
+                       @bind:event="oninput" />
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">BookmarkName</label>
+                <input class="form-control"
+                       @bind="BookmarkTest.BookmarkName"
+                       @bind:event="oninput" />
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">IdentityKey</label>
+                <input class="form-control"
+                       @bind="BookmarkTest.IdentityKey"
+                       @bind:event="oninput" />
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">IdentityValue</label>
+                <input class="form-control"
+                       @bind="BookmarkTest.IdentityValue"
+                       @bind:event="oninput" />
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">Field</label>
+                <input class="form-control"
+                       @bind="BookmarkTest.Field"
+                       @bind:event="oninput" />
+            </div>
+
+            <div class="mb-2">
+                <label class="form-label">Value</label>
+                <input class="form-control"
+                       @bind="BookmarkTest.Value"
+                       @bind:event="oninput" />
             </div>
 
             <div class="d-flex gap-2 flex-wrap mt-2">
                 <button class="btn btn-sm btn-success"
-                        @onclick="StartObjectWorkflowAsync">
+                        @onclick="StartGenericWorkflowAsync">
                     Iniciar workflow
                 </button>
 
                 <button class="btn btn-sm btn-primary"
-                        @onclick='() => SendObjectFieldSignalAsync("name", TestObject.Name)'>
-                    Enviar Nome
-                </button>
-
-                <button class="btn btn-sm btn-primary"
-                        @onclick='() => SendObjectFieldSignalAsync("description", TestObject.Description)'>
-                    Enviar Descrição
+                        @onclick="SendGenericBookmarkSignalAsync">
+                    Enviar sinal
                 </button>
             </div>
 
@@ -273,6 +282,7 @@
                 <pre class="object-test-response">@LastObjectWorkflowResponse</pre>
             }
         </div>
+    
     }
 </div>
 
