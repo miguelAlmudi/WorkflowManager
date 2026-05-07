@@ -17,6 +17,7 @@ using Elsa.EntityFrameworkCore.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Components;
 using WorkflowManager.Workflows;
+using WorkflowManager.Services;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -92,6 +93,8 @@ builder.Services.AddElsa(elsa =>
 
     elsa.AddActivitiesFrom<Program>();
 });
+
+builder.Services.AddScoped<WorkflowExecutionService>();
 
 var app = builder.Build();
 

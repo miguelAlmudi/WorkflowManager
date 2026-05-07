@@ -2,6 +2,7 @@
 using Elsa.Workflows.Runtime;
 using Elsa.Workflows.Runtime.Messages;
 using Microsoft.Data.Sqlite;
+using WorkflowManager.Services;
 
 namespace WorkflowManager.Endpoints;
 
@@ -11,7 +12,7 @@ public static class GenericWorkflowEndpoints
     {
         app.MapPost("/api/generic-workflow/start", async (
             GenericWorkflowStartRequest request,
-    IWorkflowRuntime workflowRuntime) =>
+            WorkflowExecutionService workflowExecutionService) =>
         {
             if (string.IsNullOrWhiteSpace(request.DefinitionId))
             {
@@ -21,20 +22,16 @@ public static class GenericWorkflowEndpoints
                 });
             }
 
-            var client = await workflowRuntime.CreateClientAsync();
-
-            var result = await client.CreateAndRunInstanceAsync(new CreateAndRunWorkflowInstanceRequest
-            {
-                WorkflowDefinitionHandle = WorkflowDefinitionHandle.ByDefinitionId(request.DefinitionId),
-                CorrelationId = request.CorrelationId
-            });
+            var result = await workflowExecutionService.IniciarWorkflowAsync(
+                definitionId: request.DefinitionId,
+                correlationId: request.CorrelationId);
 
             return Results.Ok(new
             {
                 message = "Workflow iniciado pelo runtime.",
-                request.DefinitionId,
-                request.CorrelationId,
-                result
+                result.DefinitionId,
+                result.CorrelationId,
+                result.Result
             });
         });
 
