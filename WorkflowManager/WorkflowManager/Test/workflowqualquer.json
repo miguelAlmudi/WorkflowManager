@@ -1,0 +1,32 @@
+{
+  "id": "WorkflowComHelloDynamicBookmark-v1",
+  "definitionId": "WorkflowComHelloDynamicBookmark",
+  "name": "Workflow com HelloDynamic e Bookmark Metadata",
+  "description": "Teste para preencher bookmark automaticamente ao selecionar nó dinâmico.",
+  "version": 1,
+  "isLatest": true,
+  "isPublished": true,
+  "root": {
+    "id": "Flowchart1",
+    "type": "Elsa.Flowchart",
+    "activities": [
+      {
+        "id": "HelloDynamic1",
+        "type": "BionicCrow.DynamicActivities.HelloDynamicActivity",
+        "name": "Hello Dynamic Activity",
+        "message": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "Mensagem da activity dinâmica."
+          }
+        },
+        "bookmarkName": "HelloDynamic:teste-001",
+        "identityKey": "DynamicId",
+        "identityValue": "teste-001",
+        "field": "message",
+        "value": ""
+      }
+    ]
+  }
+}
