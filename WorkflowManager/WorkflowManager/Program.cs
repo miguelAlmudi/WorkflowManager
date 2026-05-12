@@ -294,7 +294,7 @@ app.MapGet("/debug-workflow-services", (IServiceProvider services) =>
     return Results.Ok(types);
 });
 
-/*
+
 app.MapGet("/debug-activities", async (IActivityRegistry registry) =>
 {
     var descriptors = registry.ListAll()
