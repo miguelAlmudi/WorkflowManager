@@ -397,7 +397,6 @@ namespace WorkflowManager.Components.Pages
             try
             {
                 var input = new Dictionary<string, object>();
-                var input = new Dictionary<string, object>();
 
                 if (!string.IsNullOrWhiteSpace(BookmarkTest.IdentityKey))
                     input[BookmarkTest.IdentityKey] = BookmarkTest.IdentityValue;

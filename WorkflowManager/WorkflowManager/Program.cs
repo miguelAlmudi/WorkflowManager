@@ -856,16 +856,6 @@ public static class DynamicAssemblyRegistry
         return null;
     }
 
-    public static IReadOnlyList<Type> FindActivityTypes()
-    {
-        return _assemblies
-            .SelectMany(GetLoadableTypes)
-            .Where(t =>
-                typeof(IActivity).IsAssignableFrom(t) &&
-                t is { IsAbstract: false, IsInterface: false, IsGenericType: false })
-            .OrderBy(t => t.FullName)
-            .ToList();
-    }
 
     private static Assembly? ResolveFromLibsFolder(AssemblyLoadContext context, AssemblyName assemblyName)
     {
