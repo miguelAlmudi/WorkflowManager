@@ -1,0 +1,73 @@
+{
+  "id": "WorkflowCompletoDinamicoComBookmark-v2",
+  "definitionId": "WorkflowCompletoDinamicoComBookmark",
+  "name": "Workflow Completo Dinâmico com Bookmark",
+  "description": "Workflow para testar publicação dinâmica, activity dinâmica via DLL e bookmark aguardando dois sinais.",
+  "version": 1,
+  "isLatest": true,
+  "isPublished": true,
+  "root": {
+    "id": "Flowchart1",
+    "type": "Elsa.Flowchart",
+    "version": 1,
+    "activities": [
+      {
+        "id": "HelloDynamic1",
+        "type": "BionicCrow.DynamicActivities.HelloDynamicActivity",
+        "version": 1,
+        "name": "Executar activity dinâmica",
+        "message": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "Activity dinâmica carregada da DLL executada com sucesso."
+          }
+        }
+      },
+      {
+        "id": "WaitForObjectDynamicTest",
+        "type": "BionicCrow.WaitForObjectFieldsActivity",
+        "version": 1,
+        "name": "Aguardar alteração de nome e descrição",
+        "objectId": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "objeto-dinamico-001"
+          }
+        }
+      },
+      {
+        "id": "WriteLineFinal",
+        "type": "Elsa.WriteLine",
+        "version": 1,
+        "name": "Finalizar workflow",
+        "text": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "Workflow completo finalizado após receber name e description."
+          }
+        }
+      }
+    ],
+    "connections": [
+      {
+        "source": {
+          "activity": "HelloDynamic1"
+        },
+        "target": {
+          "activity": "WaitForObjectDynamicTest"
+        }
+      },
+      {
+        "source": {
+          "activity": "WaitForObjectDynamicTest"
+        },
+        "target": {
+          "activity": "WriteLineFinal"
+        }
+      }
+    ]
+  }
+}

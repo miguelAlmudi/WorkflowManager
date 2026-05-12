@@ -361,6 +361,12 @@ namespace WorkflowManager.Components.Pages
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(RawWorkflowJson))
+            {
+                ObjectWorkflowStatus = "Carregue um arquivo JSON antes de publicar/iniciar workflow genérico.";
+                return;
+            }
+
             try
             {
                 var request = new GenericWorkflowStartRequestClient
@@ -391,6 +397,15 @@ namespace WorkflowManager.Components.Pages
             try
             {
                 var input = new Dictionary<string, object>();
+                var input = new Dictionary<string, object>();
+
+                if (!string.IsNullOrWhiteSpace(BookmarkTest.IdentityKey))
+                    input[BookmarkTest.IdentityKey] = BookmarkTest.IdentityValue;
+
+                if (!string.IsNullOrWhiteSpace(BookmarkTest.Field))
+                    input["Field"] = BookmarkTest.Field;
+
+                input["Value"] = BookmarkTest.Value ?? "";
 
                 if (!string.IsNullOrWhiteSpace(BookmarkTest.IdentityKey))
                     input[BookmarkTest.IdentityKey] = BookmarkTest.IdentityValue;
@@ -480,8 +495,64 @@ namespace WorkflowManager.Components.Pages
 
             BookmarkTest.DefinitionId = Workflow?.DefinitionId ?? BookmarkTest.DefinitionId;
 
+            // 1. Caso genérico: qualquer activity pode declarar metadados de bookmark no JSON.
+            var explicitBookmarkName = TryGetHighlightValue(
+                node,
+                "Bookmark Name",
+                "BookmarkName",
+                "bookmarkName",
+                "Signal Name",
+                "SignalName",
+                "signalName");
+
+            var identityKey = TryGetHighlightValue(
+                node,
+                "Identity Key",
+                "IdentityKey",
+                "identityKey");
+
+            var identityValue = TryGetHighlightValue(
+                node,
+                "Identity Value",
+                "IdentityValue",
+                "identityValue");
+
+            var field = TryGetHighlightValue(
+                node,
+                "Field",
+                "field");
+
+            var value = TryGetHighlightValue(
+                node,
+                "Value",
+                "value");
+
+            if (!string.IsNullOrWhiteSpace(explicitBookmarkName))
+            {
+                BookmarkTest.BookmarkName = explicitBookmarkName;
+
+                BookmarkTest.IdentityKey = string.IsNullOrWhiteSpace(identityKey)
+                    ? "Id"
+                    : identityKey;
+
+                BookmarkTest.IdentityValue = identityValue ?? "";
+
+                BookmarkTest.CorrelationId = !string.IsNullOrWhiteSpace(identityValue)
+                    ? identityValue
+                    : BookmarkTest.CorrelationId;
+
+                BookmarkTest.Field = string.IsNullOrWhiteSpace(field)
+                    ? ""
+                    : field;
+
+                BookmarkTest.Value = value ?? "";
+
+                ObjectWorkflowStatus = $"Nó selecionado: {node.Label}. Bookmark genérico detectado.";
+                return;
+            }
+
+            // 2. Caso específico de objeto.
             var objectId = TryGetHighlightValue(node, "Object Id", "ObjectId", "Object id");
-            var calculationId = TryGetHighlightValue(node, "Calculation Id", "CalculationId", "Calculation id");
 
             if (!string.IsNullOrWhiteSpace(objectId))
             {
@@ -495,6 +566,9 @@ namespace WorkflowManager.Components.Pages
                 ObjectWorkflowStatus = $"Nó selecionado: {node.Label}. Bookmark de objeto detectado.";
                 return;
             }
+
+            // 3. Caso específico de cálculo/soma.
+            var calculationId = TryGetHighlightValue(node, "Calculation Id", "CalculationId", "Calculation id");
 
             if (!string.IsNullOrWhiteSpace(calculationId))
             {
@@ -939,12 +1013,19 @@ namespace WorkflowManager.Components.Pages
             var result = new List<ActivityHighlight>();
 
             var preferredProperties = new[]
-            {
+{
                 "objectId",
                 "calculationId",
+
+                // Metadados genéricos para bookmark/signal.
                 "bookmarkName",
                 "signalName",
-                "text", "path", "url", "condition", "variable", "value",
+                "identityKey",
+                "identityValue",
+                "field",
+                "value",
+
+                "text", "path", "url", "condition", "variable",
                 "method", "message", "statusCodes", "canStartWorkflow",
                 "cronExpression", "delay", "content", "name"
             };

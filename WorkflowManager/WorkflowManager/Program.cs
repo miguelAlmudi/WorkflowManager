@@ -119,6 +119,32 @@ builder.Services.AddScoped<WorkflowExecutionService>();
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var registry = scope.ServiceProvider.GetRequiredService<IActivityRegistry>();
+
+    var dynamicActivityTypes = DynamicAssemblyRegistry.FindActivityTypes()
+        .Where(t => t.Assembly != typeof(Program).Assembly)
+        .ToList();
+
+    Console.WriteLine("=================================");
+    Console.WriteLine("[Registro dinâmico de activities no ActivityRegistry]");
+
+    foreach (var activityType in dynamicActivityTypes)
+    {
+        var generatedTypeName = ActivityTypeNameHelper.GenerateTypeName(activityType);
+
+        Console.WriteLine($"Tipo CLR: {activityType.FullName}");
+        Console.WriteLine($"TypeName Elsa: {generatedTypeName}");
+    }
+
+    registry.RegisterAsync(dynamicActivityTypes, CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+
+    Console.WriteLine("=================================");
+}
+
 Console.WriteLine("SomarActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<SomarActivity>());
 Console.WriteLine("CalculoActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<CalculoActivity>());
 Console.WriteLine("WaitForSignalActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<WaitForSignalActivity>());
@@ -271,23 +297,44 @@ app.MapGet("/debug-workflow-services", (IServiceProvider services) =>
 /*
 app.MapGet("/debug-activities", async (IActivityRegistry registry) =>
 {
-    var descriptors = await registry.ListAsync();
+    var descriptors = registry.ListAll()
+        .Where(x =>
+            x.TypeName.Contains("Hello", StringComparison.OrdinalIgnoreCase) ||
+            x.TypeName.Contains("Dynamic", StringComparison.OrdinalIgnoreCase) ||
+            x.TypeName.Contains("Object", StringComparison.OrdinalIgnoreCase) ||
+            x.TypeName.Contains("WriteLine", StringComparison.OrdinalIgnoreCase))
+        .Select(x => new
+        {
+            x.TypeName,
+            x.Version,
+            x.Name,
+            x.DisplayName,
+            x.Category,
+            x.Namespace
+        })
+        .OrderBy(x => x.TypeName)
+        .ThenBy(x => x.Version)
+        .ToArray();
 
-    return Results.Ok(
-        descriptors
-            .Select(x => new
-            {
-                x.TypeName,
-                x.Name,
-                x.DisplayName,
-                x.Category
-            })
-            .OrderBy(x => x.Category)
-            .ThenBy(x => x.DisplayName)
-            .ToArray()
-    );
+    return Results.Ok(descriptors);
 });
-*/
+
+app.MapGet("/debug-dynamic-activity-types", () =>
+{
+    var activityTypes = DynamicAssemblyRegistry.FindActivityTypes()
+        .Select(t => new
+        {
+            FullName = t.FullName,
+            Name = t.Name,
+            Namespace = t.Namespace,
+            Assembly = t.Assembly.GetName().Name,
+            GeneratedTypeName = ActivityTypeNameHelper.GenerateTypeName(t)
+        })
+        .OrderBy(x => x.FullName)
+        .ToArray();
+
+    return Results.Ok(activityTypes);
+});
 
 app.MapGet("/debug-foundation-types", () =>
 {
@@ -809,6 +856,17 @@ public static class DynamicAssemblyRegistry
         return null;
     }
 
+    public static IReadOnlyList<Type> FindActivityTypes()
+    {
+        return _assemblies
+            .SelectMany(GetLoadableTypes)
+            .Where(t =>
+                typeof(IActivity).IsAssignableFrom(t) &&
+                t is { IsAbstract: false, IsInterface: false, IsGenericType: false })
+            .OrderBy(t => t.FullName)
+            .ToList();
+    }
+
     private static Assembly? ResolveFromLibsFolder(AssemblyLoadContext context, AssemblyName assemblyName)
     {
         if (string.IsNullOrWhiteSpace(_libsFolder) || !Directory.Exists(_libsFolder))
@@ -934,7 +992,6 @@ public static class DynamicAssemblyRegistry
     }
 }
 
-
 public static class ReflectionCatalog
 {
     public static IReadOnlyList<AssemblyInfoDto> GetAssembliesAndTypes(IEnumerable<Assembly> assemblies)
@@ -1049,6 +1106,8 @@ public sealed class MethodInfoDto
     public string ReturnType { get; set; } = "";
     public string[] Parameters { get; set; } = Array.Empty<string>();
 }
+
+
 
 public static class ReflectionInvoker
 {

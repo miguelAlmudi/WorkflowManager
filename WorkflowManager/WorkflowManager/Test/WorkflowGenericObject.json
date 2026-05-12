@@ -1,0 +1,27 @@
+{
+  "id": "WorkflowGenericoObjeto002-v1",
+  "definitionId": "WorkflowGenericoObjeto002",
+  "name": "Workflow Genérico Objeto 002",
+  "description": "Workflow criado para testar registro e publicação dinâmica antes do start.",
+  "version": 1,
+  "isLatest": true,
+  "isPublished": true,
+  "root": {
+    "id": "Flowchart1",
+    "type": "Elsa.Flowchart",
+    "activities": [
+      {
+        "id": "WaitForObject002",
+        "type": "BionicCrow.WaitForObjectFieldsActivity",
+        "name": "Aguardar alteração do objeto 002",
+        "objectId": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "objeto-002"
+          }
+        }
+      }
+    ]
+  }
+}
