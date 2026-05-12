@@ -92,6 +92,27 @@ builder.Services.AddElsa(elsa =>
     elsa.AddWorkflow<SumWorkflow>();
 
     elsa.AddActivitiesFrom<Program>();
+
+    elsa.UseWorkflowManagement(management =>
+    {
+        var dynamicActivityTypes = DynamicAssemblyRegistry.FindActivityTypes()
+            .Where(t => t.Assembly != typeof(Program).Assembly)
+            .ToList();
+
+        Console.WriteLine("=================================");
+        Console.WriteLine("[DynamicActivityRegistration] Activities encontradas via Reflection:");
+
+        foreach (var activityType in dynamicActivityTypes)
+        {
+            Console.WriteLine($"CLR Type: {activityType.FullName}");
+            Console.WriteLine($"Elsa TypeName: {ActivityTypeNameHelper.GenerateTypeName(activityType)}");
+        }
+
+        Console.WriteLine($"Total: {dynamicActivityTypes.Count}");
+        Console.WriteLine("=================================");
+
+        management.AddActivities(dynamicActivityTypes);
+    });
 });
 
 builder.Services.AddScoped<WorkflowExecutionService>();
@@ -102,6 +123,32 @@ Console.WriteLine("SomarActivity TypeName = " + ActivityTypeNameHelper.GenerateT
 Console.WriteLine("CalculoActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<CalculoActivity>());
 Console.WriteLine("WaitForSignalActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<WaitForSignalActivity>());
 Console.WriteLine("WaitForObjectFieldsActivity TypeName = " + ActivityTypeNameHelper.GenerateTypeName<WaitForObjectFieldsActivity>());
+
+using (var scope = app.Services.CreateScope())
+{
+    var registry = scope.ServiceProvider.GetRequiredService<IActivityRegistry>();
+
+    var dynamicActivityTypes = DynamicAssemblyRegistry.FindActivityTypes()
+        .Where(t => t.Assembly != typeof(Program).Assembly)
+        .ToList();
+
+    Console.WriteLine("=================================");
+    Console.WriteLine("[ActivityRegistry] Registro forçado de activities dinâmicas");
+
+    foreach (var activityType in dynamicActivityTypes)
+    {
+        Console.WriteLine($"Registrando: {activityType.FullName}");
+        Console.WriteLine($"Elsa TypeName: {ActivityTypeNameHelper.GenerateTypeName(activityType)}");
+    }
+
+    registry.RegisterAsync(dynamicActivityTypes, CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
+
+    Console.WriteLine($"Total registrado: {dynamicActivityTypes.Count}");
+    Console.WriteLine("=================================");
+}
+
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -150,6 +197,77 @@ app.MapGet("/debug-all-types", () =>
     });
 });
 
+app.MapGet("/debug-dynamic-activity-types", () =>
+{
+    var activities = DynamicAssemblyRegistry.FindActivityTypeInfos();
+
+    return Results.Ok(new
+    {
+        Count = activities.Count,
+        Activities = activities
+    });
+});
+
+app.MapGet("/debug-activity-registry", (IActivityRegistry registry) =>
+{
+    var descriptors = registry.ListAll()
+        .Select(x => new
+        {
+            x.TypeName,
+            x.Version,
+            x.Name,
+            x.DisplayName,
+            x.Category,
+            x.Namespace
+        })
+        .OrderBy(x => x.TypeName)
+        .ThenBy(x => x.Version)
+        .ToArray();
+
+    return Results.Ok(new
+    {
+        Count = descriptors.Length,
+        Activities = descriptors
+    });
+});
+
+app.MapGet("/debug-workflow-services", (IServiceProvider services) =>
+{
+    var serviceProviderType = services.GetType();
+
+    var assemblies = AppDomain.CurrentDomain.GetAssemblies()
+        .Where(a => (a.GetName().Name ?? "").StartsWith("Elsa.", StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
+    var types = assemblies
+        .SelectMany(a =>
+        {
+            try
+            {
+                return a.GetTypes();
+            }
+            catch
+            {
+                return Array.Empty<Type>();
+            }
+        })
+        .Where(t =>
+            t.Name.Contains("WorkflowDefinition", StringComparison.OrdinalIgnoreCase) ||
+            t.Name.Contains("WorkflowPublisher", StringComparison.OrdinalIgnoreCase) ||
+            t.Name.Contains("WorkflowRegistry", StringComparison.OrdinalIgnoreCase) ||
+            t.Name.Contains("WorkflowStore", StringComparison.OrdinalIgnoreCase))
+        .Select(t => new
+        {
+            t.FullName,
+            t.Name,
+            Assembly = t.Assembly.GetName().Name
+        })
+        .OrderBy(x => x.FullName)
+        .ToArray();
+
+    return Results.Ok(types);
+});
+
 /*
 app.MapGet("/debug-activities", async (IActivityRegistry registry) =>
 {
@@ -170,6 +288,119 @@ app.MapGet("/debug-activities", async (IActivityRegistry registry) =>
     );
 });
 */
+
+app.MapGet("/debug-foundation-types", () =>
+{
+    var result = DynamicAssemblyRegistry.AllAssemblies
+        .Where(a => string.Equals(a.GetName().Name, "BionicCrow.Foundation", StringComparison.OrdinalIgnoreCase))
+        .SelectMany(a =>
+        {
+            try
+            {
+                return a.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                return ex.Types.Where(t => t != null).Cast<Type>();
+            }
+            catch
+            {
+                return Array.Empty<Type>();
+            }
+        })
+        .Where(t => t.IsClass)
+        .OrderBy(t => t.FullName)
+        .Select(t => new
+        {
+            t.FullName,
+            t.Name,
+            Namespace = t.Namespace,
+            Assembly = t.Assembly.GetName().Name,
+            IsActivity = typeof(IActivity).IsAssignableFrom(t),
+            ElsaTypeName = typeof(IActivity).IsAssignableFrom(t)
+                ? ActivityTypeNameHelper.GenerateTypeName(t)
+                : null,
+            BaseType = t.BaseType?.FullName,
+            Methods = t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                .Where(m => !m.IsSpecialName)
+                .Select(m => new
+                {
+                    m.Name,
+                    ReturnType = m.ReturnType.FullName ?? m.ReturnType.Name,
+                    Parameters = m.GetParameters()
+                        .Select(p => new
+                        {
+                            p.Name,
+                            Type = p.ParameterType.FullName ?? p.ParameterType.Name
+                        })
+                        .ToArray()
+                })
+                .OrderBy(m => m.Name)
+                .ToArray()
+        })
+        .ToArray();
+
+    return Results.Ok(new
+    {
+        Count = result.Length,
+        Types = result
+    });
+});
+
+
+app.MapGet("/debug-type-methods/{typeName}", (string typeName) =>
+{
+    var types = DynamicAssemblyRegistry.AllAssemblies
+        .SelectMany(a =>
+        {
+            try
+            {
+                return a.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                return ex.Types.Where(t => t != null).Cast<Type>();
+            }
+            catch
+            {
+                return Array.Empty<Type>();
+            }
+        })
+        .Where(t =>
+            t.Name.Equals(typeName, StringComparison.OrdinalIgnoreCase) ||
+            (t.FullName?.Contains(typeName, StringComparison.OrdinalIgnoreCase) ?? false))
+        .Select(t => new
+        {
+            t.FullName,
+            t.Name,
+            Namespace = t.Namespace,
+            Assembly = t.Assembly.GetName().Name,
+            IsActivity = typeof(IActivity).IsAssignableFrom(t),
+            ElsaTypeName = typeof(IActivity).IsAssignableFrom(t)
+                ? ActivityTypeNameHelper.GenerateTypeName(t)
+                : null,
+            Methods = t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+                .Where(m => !m.IsSpecialName)
+                .Select(m => new
+                {
+                    m.Name,
+                    ReturnType = m.ReturnType.FullName ?? m.ReturnType.Name,
+                    Parameters = m.GetParameters()
+                        .Select(p => new
+                        {
+                            p.Name,
+                            Type = p.ParameterType.FullName ?? p.ParameterType.Name
+                        })
+                        .ToArray()
+                })
+                .OrderBy(m => m.Name)
+                .ToArray()
+        })
+        .OrderBy(x => x.FullName)
+        .ToArray();
+
+    return Results.Ok(types);
+});
 
 app.MapGet("/debug-loaded-assemblies", () =>
 {
@@ -492,6 +723,73 @@ public static class DynamicAssemblyRegistry
         }
     }
 
+    public static IReadOnlyList<Type> FindActivityTypes()
+    {
+        return _assemblies
+            .SelectMany(GetLoadableTypes)
+            .Where(IsConcreteActivityType)
+            .OrderBy(t => t.FullName)
+            .ToList();
+    }
+
+    public static IReadOnlyList<ActivityReflectionInfo> FindActivityTypeInfos()
+    {
+        return FindActivityTypes()
+            .Select(t => new ActivityReflectionInfo
+            {
+                FullName = t.FullName ?? "",
+                Name = t.Name,
+                Namespace = t.Namespace ?? "",
+                AssemblyName = t.Assembly.GetName().Name ?? "",
+                AssemblyFullName = t.Assembly.FullName ?? "",
+                Location = SafeLocation(t.Assembly),
+                ElsaTypeName = ActivityTypeNameHelper.GenerateTypeName(t),
+                IsActivity = true,
+                IsAbstract = t.IsAbstract,
+                IsGenericType = t.IsGenericType,
+                BaseType = t.BaseType?.FullName,
+                Inputs = GetPropertiesWithAttributeName(t, "InputAttribute"),
+                Outputs = GetPropertiesWithAttributeName(t, "OutputAttribute")
+            })
+            .ToList();
+    }
+
+    private static bool IsConcreteActivityType(Type type)
+    {
+        return typeof(IActivity).IsAssignableFrom(type)
+            && type.IsClass
+            && !type.IsAbstract
+            && !type.IsInterface
+            && !type.IsGenericType;
+    }
+
+    private static string SafeLocation(Assembly assembly)
+    {
+        try
+        {
+            return assembly.Location;
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private static ActivityPropertyInfo[] GetPropertiesWithAttributeName(Type type, string attributeName)
+    {
+        return type
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.GetCustomAttributes(inherit: true)
+                .Any(a => a.GetType().Name.Equals(attributeName, StringComparison.OrdinalIgnoreCase)))
+            .Select(p => new ActivityPropertyInfo
+            {
+                Name = p.Name,
+                PropertyType = p.PropertyType.FullName ?? p.PropertyType.Name
+            })
+            .OrderBy(p => p.Name)
+            .ToArray();
+    }
+
     public static Type? FindType(string fullTypeName)
     {
         foreach (var assembly in _assemblies)
@@ -702,6 +1000,29 @@ public static class ReflectionCatalog
             return Array.Empty<Type>();
         }
     }
+}
+
+public sealed class ActivityReflectionInfo
+{
+    public string FullName { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Namespace { get; set; } = "";
+    public string AssemblyName { get; set; } = "";
+    public string AssemblyFullName { get; set; } = "";
+    public string Location { get; set; } = "";
+    public string ElsaTypeName { get; set; } = "";
+    public bool IsActivity { get; set; }
+    public bool IsAbstract { get; set; }
+    public bool IsGenericType { get; set; }
+    public string? BaseType { get; set; }
+    public ActivityPropertyInfo[] Inputs { get; set; } = Array.Empty<ActivityPropertyInfo>();
+    public ActivityPropertyInfo[] Outputs { get; set; } = Array.Empty<ActivityPropertyInfo>();
+}
+
+public sealed class ActivityPropertyInfo
+{
+    public string Name { get; set; } = "";
+    public string PropertyType { get; set; } = "";
 }
 
 public sealed class AssemblyInfoDto

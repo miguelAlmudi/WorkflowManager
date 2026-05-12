@@ -1,0 +1,73 @@
+{
+  "id": "WorkflowFoundationHelloDynamicComBookmark-v1",
+  "definitionId": "WorkflowFoundationHelloDynamicComBookmark",
+  "name": "Workflow Foundation HelloDynamic com Bookmark",
+  "description": "Workflow para testar activity din\u00E2mica carregada da BionicCrow.Foundation.dll e bookmark aguardando name e description.",
+  "version": 1,
+  "isLatest": true,
+  "isPublished": true,
+  "root": {
+    "id": "Flowchart1",
+    "type": "Elsa.Flowchart",
+    "version": 1,
+    "activities": [
+      {
+        "id": "HelloDynamic1",
+        "type": "BionicCrow.HelloDynamicActivity",
+        "version": 1,
+        "name": "Executar HelloDynamic da Foundation",
+        "message": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "Funcionou: HelloDynamicActivity veio da BionicCrow.Foundation.dll"
+          }
+        }
+      },
+      {
+        "id": "WaitForObjectDynamicTest",
+        "type": "BionicCrow.WaitForObjectFieldsActivity",
+        "version": 1,
+        "name": "Aguardar altera\u00E7\u00E3o de nome e descri\u00E7\u00E3o",
+        "objectId": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "objeto-foundation-001"
+          }
+        }
+      },
+      {
+        "id": "WriteLineFinal",
+        "type": "Elsa.WriteLine",
+        "version": 1,
+        "name": "Finalizar workflow",
+        "text": {
+          "typeName": "String",
+          "expression": {
+            "type": "Literal",
+            "value": "Workflow finalizado ap\u00F3s HelloDynamicActivity da Foundation e dois sinais."
+          }
+        }
+      }
+    ],
+    "connections": [
+      {
+        "source": {
+          "activity": "HelloDynamic1"
+        },
+        "target": {
+          "activity": "WaitForObjectDynamicTest"
+        }
+      },
+      {
+        "source": {
+          "activity": "WaitForObjectDynamicTest"
+        },
+        "target": {
+          "activity": "WriteLineFinal"
+        }
+      }
+    ]
+  }
+}

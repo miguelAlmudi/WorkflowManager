@@ -17,7 +17,7 @@
   </ItemGroup>
 
 	<ItemGroup>
-		<Content Include="Workflows\*.json" CopyToOutputDirectory="PreserveNewest" />
+		<Content Update="Workflows\*.json" CopyToOutputDirectory="PreserveNewest" />
 	</ItemGroup>
 
 </Project>

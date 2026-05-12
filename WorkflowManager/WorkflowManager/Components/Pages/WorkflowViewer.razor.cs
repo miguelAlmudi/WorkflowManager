@@ -355,12 +355,20 @@ namespace WorkflowManager.Components.Pages
 
         private async Task StartGenericWorkflowAsync()
         {
+            if (string.IsNullOrWhiteSpace(RawWorkflowJson))
+            {
+                ObjectWorkflowStatus = "Carregue um workflow JSON antes de publicar/iniciar.";
+                return;
+            }
+
             try
             {
                 var request = new GenericWorkflowStartRequestClient
                 {
                     DefinitionId = BookmarkTest.DefinitionId,
-                    CorrelationId = BookmarkTest.CorrelationId
+                    CorrelationId = BookmarkTest.CorrelationId,
+                    WorkflowJson = RawWorkflowJson,
+                    Input = new Dictionary<string, object>()
                 };
 
                 var response = await Http.PostAsJsonAsync("api/generic-workflow/start", request);
@@ -369,8 +377,8 @@ namespace WorkflowManager.Components.Pages
                 LastObjectWorkflowResponse = responseText;
 
                 ObjectWorkflowStatus = response.IsSuccessStatusCode
-                    ? $"Workflow iniciado: {BookmarkTest.DefinitionId}"
-                    : $"Erro ao iniciar workflow: {response.StatusCode}";
+                    ? $"Workflow publicado e iniciado: {BookmarkTest.DefinitionId}"
+                    : $"Erro ao publicar/iniciar workflow: {response.StatusCode}";
             }
             catch (Exception ex)
             {
@@ -382,12 +390,15 @@ namespace WorkflowManager.Components.Pages
         {
             try
             {
-                var input = new Dictionary<string, object>
-                {
-                    [BookmarkTest.IdentityKey] = BookmarkTest.IdentityValue,
-                    ["Field"] = BookmarkTest.Field,
-                    ["Value"] = BookmarkTest.Value
-                };
+                var input = new Dictionary<string, object>();
+
+                if (!string.IsNullOrWhiteSpace(BookmarkTest.IdentityKey))
+                    input[BookmarkTest.IdentityKey] = BookmarkTest.IdentityValue;
+
+                if (!string.IsNullOrWhiteSpace(BookmarkTest.Field))
+                    input["Field"] = BookmarkTest.Field;
+
+                input["Value"] = BookmarkTest.Value ?? "";
 
                 var request = new GenericBookmarkSignalRequestClient
                 {
@@ -414,12 +425,53 @@ namespace WorkflowManager.Components.Pages
         {
             public string DefinitionId { get; set; } = "";
             public string CorrelationId { get; set; } = "";
+            public string? WorkflowJson { get; set; }
+            public Dictionary<string, object>? Input { get; set; }
         }
+        
 
         private sealed class GenericBookmarkSignalRequestClient
         {
             public string BookmarkName { get; set; } = "";
             public Dictionary<string, object> Input { get; set; } = new();
+        }
+
+        private async Task RegisterCurrentWorkflowJsonAsync()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(RawWorkflowJson))
+                {
+                    ObjectWorkflowStatus = "Carregue um workflow JSON antes de registrar.";
+                    return;
+                }
+
+                var request = new GenericWorkflowJsonRegisterRequestClient
+                {
+                    Json = RawWorkflowJson
+                };
+
+                var response = await Http.PostAsJsonAsync(
+                    "api/generic-workflow/register-json-file",
+                    request);
+
+                var responseText = await response.Content.ReadAsStringAsync();
+
+                LastObjectWorkflowResponse = responseText;
+
+                ObjectWorkflowStatus = response.IsSuccessStatusCode
+                    ? "Workflow JSON registrado em arquivo."
+                    : $"Erro ao registrar workflow JSON: {response.StatusCode}";
+            }
+            catch (Exception ex)
+            {
+                ObjectWorkflowStatus = $"Erro: {ex.Message}";
+            }
+        }
+
+        private sealed class GenericWorkflowJsonRegisterRequestClient
+        {
+            public string Json { get; set; } = "";
         }
 
         private void SelectNode(GraphNode node)

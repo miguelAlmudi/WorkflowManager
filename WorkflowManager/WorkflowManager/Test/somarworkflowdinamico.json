@@ -1,0 +1,19 @@
+{
+  "id": "sum-json-dinamico-v1",
+  "definitionId": "SumWorkflowDinamicoTeste",
+  "version": 1,
+  "isLatest": true,
+  "isPublished": true,
+  "root": {
+    "id": "soma-001",
+    "type": "BionicCrow.WaitForSumValuesActivity",
+    "displayName": "Aguardar valores A e B para soma",
+    "calculationId": {
+      "typeName": "String",
+      "expression": {
+        "type": "Literal",
+        "value": "soma-001"
+      }
+    }
+  }
+}
