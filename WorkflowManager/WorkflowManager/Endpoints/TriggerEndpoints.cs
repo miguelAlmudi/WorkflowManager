@@ -55,7 +55,7 @@ public static class TriggerEndpoints
                     bookmarkName,
                     bookmarkId,
                     input,
-                    result = resumeResult
+                    result = SafeWorkflowResult.From(resumeResult)
                 });
             }
 
@@ -76,10 +76,94 @@ public static class TriggerEndpoints
                 definitionId,
                 correlationId = request.ObjectId,
                 input,
-                result = startResult.Result
+                result = SafeWorkflowResult.From(startResult.Result)
             });
         });
 
+        app.MapPost("/api/triggers/event", async (
+            WorkflowEventTriggerRequest request,
+            WorkflowExecutionService workflowExecutionService,
+            IWorkflowResumer workflowResumer,
+            IWebHostEnvironment environment,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.EventName))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "EventName é obrigatório."
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.CorrelationId))
+            {
+                return Results.BadRequest(new
+                {
+                    message = "CorrelationId é obrigatório."
+                });
+            }
+
+            var bookmarkName = $"{request.EventName}:{request.CorrelationId}";
+
+            var input = new Dictionary<string, object>
+            {
+                ["EventName"] = request.EventName,
+                ["CorrelationId"] = request.CorrelationId,
+                ["BookmarkName"] = bookmarkName
+            };
+
+            if (request.Data is not null)
+            {
+                foreach (var item in request.Data)
+                    input[item.Key] = item.Value ?? "";
+            }
+
+            var bookmarkId = await FindBookmarkIdByNameAsync(
+                environment.ContentRootPath,
+                bookmarkName);
+
+            if (!string.IsNullOrWhiteSpace(bookmarkId))
+            {
+                var resumeResult = await workflowResumer.ResumeAsync(bookmarkId, input);
+
+                return Results.Ok(new
+                {
+                    mode = "resume",
+                    message = "Workflow existente retomado pelo trigger.",
+                    bookmarkName,
+                    bookmarkId,
+                    input,
+                    result = SafeWorkflowResult.From(resumeResult)
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.DefinitionId))
+            {
+                return Results.NotFound(new
+                {
+                    mode = "not_found",
+                    message = "Nenhum bookmark encontrado e nenhum DefinitionId foi informado para iniciar novo workflow.",
+                    bookmarkName
+                });
+            }
+
+            var startResult = await workflowExecutionService.IniciarWorkflowAsync(
+                definitionId: request.DefinitionId,
+                correlationId: request.CorrelationId,
+                input: input,
+                cancellationToken: cancellationToken);
+
+            return Results.Ok(new
+            {
+                mode = "start",
+                message = "Nenhum bookmark encontrado. Novo workflow iniciado pelo trigger.",
+                request.DefinitionId,
+                request.CorrelationId,
+                bookmarkName,
+                input,
+                result = SafeWorkflowResult.From(startResult.Result)
+            });
+        });
 
         app.MapGet("/debug-bookmarks", async (IWebHostEnvironment environment) =>
         {
@@ -89,19 +173,19 @@ public static class TriggerEndpoints
             await using var connection = new SqliteConnection(connectionString);
             await connection.OpenAsync();
 
-            var columnsCommand = connection.CreateCommand();
-            columnsCommand.CommandText = "PRAGMA table_info([Bookmarks])";
+            var columns = await GetTableColumnsAsync(connection, "Bookmarks");
 
-            var columns = new List<string>();
-
-            await using (var reader = await columnsCommand.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                    columns.Add(reader["name"]?.ToString() ?? "");
-            }
+            var orderColumn = PickFirstExistingColumn(
+                columns,
+                "CreatedAt",
+                "UpdatedAt",
+                "Id");
 
             var command = connection.CreateCommand();
-            command.CommandText = "SELECT * FROM [Bookmarks] ORDER BY [CreatedAt] DESC LIMIT 20";
+
+            command.CommandText = string.IsNullOrWhiteSpace(orderColumn)
+                ? "SELECT * FROM [Bookmarks] LIMIT 20"
+                : $"SELECT * FROM [Bookmarks] ORDER BY [{orderColumn}] DESC LIMIT 20";
 
             var rows = new List<Dictionary<string, object?>>();
 
@@ -128,12 +212,11 @@ public static class TriggerEndpoints
         });
 
         return app;
-
     }
 
     private static async Task<string?> FindBookmarkIdByNameAsync(
-    string contentRootPath,
-    string bookmarkName)
+        string contentRootPath,
+        string bookmarkName)
     {
         var dbPath = Path.Combine(contentRootPath, "elsa.db");
         var connectionString = $"Data Source={dbPath}";
@@ -172,30 +255,29 @@ public static class TriggerEndpoints
                 searchableColumns.Select(c => $"[{c}] LIKE $bookmarkName"));
 
             command.CommandText = $"""
-            SELECT [{idColumn}]
-            FROM [Bookmarks]
-            WHERE {where}
-            ORDER BY [{orderColumn}] DESC
-            LIMIT 1
-        """;
+                SELECT [{idColumn}]
+                FROM [Bookmarks]
+                WHERE {where}
+                ORDER BY [{orderColumn}] DESC
+                LIMIT 1
+            """;
 
             command.Parameters.AddWithValue("$bookmarkName", $"%{bookmarkName}%");
         }
         else
         {
             command.CommandText = $"""
-            SELECT [{idColumn}]
-            FROM [Bookmarks]
-            ORDER BY [{orderColumn}] DESC
-            LIMIT 1
-        """;
+                SELECT [{idColumn}]
+                FROM [Bookmarks]
+                ORDER BY [{orderColumn}] DESC
+                LIMIT 1
+            """;
         }
 
         var result = await command.ExecuteScalarAsync();
 
         return result?.ToString();
     }
-
 
     private static async Task<List<string>> GetTableColumnsAsync(
         SqliteConnection connection,
@@ -242,4 +324,12 @@ public sealed class ObjectFieldChangedTriggerRequest
     public string ObjectId { get; set; } = "";
     public string Field { get; set; } = "";
     public string? Value { get; set; }
+}
+
+public sealed class WorkflowEventTriggerRequest
+{
+    public string DefinitionId { get; set; } = "";
+    public string EventName { get; set; } = "";
+    public string CorrelationId { get; set; } = "";
+    public Dictionary<string, object?>? Data { get; set; }
 }
