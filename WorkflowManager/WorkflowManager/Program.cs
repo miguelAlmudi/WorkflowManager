@@ -223,7 +223,7 @@ app.MapGet("/debug-all-types", () =>
     });
 });
 
-app.MapGet("/debug-dynamic-activity-types", () =>
+app.MapGet("/debug-dynamic-activity-types-simple", () =>
 {
     var activities = DynamicAssemblyRegistry.FindActivityTypeInfos();
 
