@@ -1,24 +1,17 @@
 ﻿@page "/workflow-viewer"
 @rendermode InteractiveServer
-@using System.Text.Json
-@using System.Linq
+
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.Components.Web
-
-<PageTitle>Workflow Viewer</PageTitle>
 
 <div class="wf-page">
     <div class="wf-header">
         <div>
-            <h3>Workflow Graph Viewer</h3>
+            <h1>Workflow Viewer / Designer</h1>
             <p class="wf-subtitle">
-                Carregue um workflow JSON do Elsa para visualizar o fluxo como grafo e mover os nós com o mouse.
+                Carregue workflows JSON, visualize o grafo, adicione activities, conecte nós, edite propriedades simples e execute o workflow.
             </p>
         </div>
-    </div>
-
-    <div class="wf-toolbar">
-        <InputFile OnChange="LoadWorkflowFile" accept=".json,application/json" class="form-control" />
     </div>
 
     @if (!string.IsNullOrWhiteSpace(StatusMessage))
@@ -28,268 +21,538 @@
         </div>
     }
 
-    @if (Workflow is not null)
-    {
-        <div class="wf-summary-grid">
-            <div class="wf-summary-card">
-                <div class="wf-summary-label">Nome</div>
-                <div class="wf-summary-value">@DisplayOrDash(Workflow.Name)</div>
+    <div class="designer-shell">
+        <aside class="activity-sidebar">
+            <div class="activity-sidebar-title">
+                Activities
             </div>
 
-            <div class="wf-summary-card">
-                <div class="wf-summary-label">DefinitionId</div>
-                <div class="wf-summary-value">@DisplayOrDash(Workflow.DefinitionId)</div>
+            <div class="activity-sidebar-subtitle">
+                Catálogo carregado do backend
             </div>
 
-            <div class="wf-summary-card">
-                <div class="wf-summary-label">Id</div>
-                <div class="wf-summary-value">@DisplayOrDash(Workflow.WorkflowId)</div>
+            <input class="form-control form-control-sm mb-2"
+                   placeholder="Buscar por nome, tipo, origem..."
+                   @bind="ActivitySearchText"
+                   @bind:event="oninput" />
+
+            <div class="designer-sidebar-actions">
+                <button class="btn btn-sm btn-primary w-100"
+                        @onclick="NewDesignerWorkflow">
+                    Novo workflow visual
+                </button>
+
+                <button class="btn btn-sm @(IsConnectMode ? "btn-warning" : "btn-outline-primary") w-100"
+                        @onclick="ToggleConnectMode">
+                    @(IsConnectMode ? "Sair do modo conexão" : "Conectar nós")
+                </button>
+
+                <button class="btn btn-sm btn-outline-secondary w-100"
+                        @onclick="ResetLayout">
+                    Reorganizar nós
+                </button>
+
+                <button class="btn btn-sm btn-outline-danger w-100"
+                        @onclick="DeleteSelectedNode">
+                    Deletar nó selecionado
+                </button>
             </div>
 
-            <div class="wf-summary-card">
-                <div class="wf-summary-label">Tipo raiz</div>
-                <div class="wf-summary-value">@DisplayOrDash(Workflow.RootType)</div>
-            </div>
+            @if (IsConnectMode)
+            {
+                <div class="connect-mode-box">
+                    <div class="connect-mode-title">Modo conexão ativo</div>
 
-            <div class="wf-summary-card">
-                <div class="wf-summary-label">Nós</div>
-                <div class="wf-summary-value">@GraphNodes.Count</div>
-            </div>
-
-            <div class="wf-summary-card">
-                <div class="wf-summary-label">Conexões</div>
-                <div class="wf-summary-value">@GraphEdges.Count</div>
-            </div>
-        </div>
-
-        <div class="wf-actions">
-            <button class="btn btn-outline-primary btn-sm" @onclick="ResetLayout">Reorganizar layout</button>
-            <button class="btn btn-success btn-sm" @onclick="ExecuteWorkflowAsync">Executar workflow</button>
-        </div>
-
-        @if (!string.IsNullOrWhiteSpace(ExecutionStateJson))
-        {
-            <div class="wf-section">
-                <div class="wf-section-title">Resultado da execução</div>
-                <pre class="wf-json-box">@ExecutionStateJson</pre>
-            </div>
-        }
-
-        @if (SelectedNode is not null)
-        {
-            <div class="wf-section">
-                <div class="wf-section-title">Nó selecionado</div>
-
-                <div class="wf-selected-card">
-                    <div class="wf-selected-name">@SelectedNode.Label</div>
-                    <div class="wf-selected-type">@SelectedNode.Type</div>
-                    <div class="wf-selected-id">ID: @SelectedNode.Id</div>
-
-                    @if (SelectedNode.Highlights.Any())
+                    @if (string.IsNullOrWhiteSpace(PendingConnectionSourceId))
                     {
-                        <div class="wf-selected-highlights">
-                            @foreach (var item in SelectedNode.Highlights)
+                        <div>Escolha o nó de origem.</div>
+                    }
+                    else
+                    {
+                        <div>
+                            Origem: <strong>@PendingConnectionSourceId</strong>
+                        </div>
+                        <div>Agora escolha o nó de destino.</div>
+                    }
+
+                    <label class="form-label mt-2">Outcome</label>
+                    <input class="form-control form-control-sm"
+                           @bind="NewConnectionOutcome"
+                           @bind:event="oninput" />
+                </div>
+            }
+
+            <div class="activity-count">
+                @ActivityCatalog.Count activity(s) encontrada(s)
+            </div>
+
+            <div class="activity-list">
+                @foreach (var activity in FilteredActivityCatalog)
+                {
+                    <button class="activity-item"
+                            title="@activity.TypeName"
+                            @onclick="() => AddActivityToCanvas(activity)">
+                        <span class="activity-name">
+                            @(activity.DisplayName ?? activity.Name ?? activity.TypeName)
+                        </span>
+
+                        <span class="activity-meta">
+                            @activity.Source · @(string.IsNullOrWhiteSpace(activity.Category) ? "Sem categoria" : activity.Category)
+                        </span>
+
+                        <span class="activity-type">
+                            @activity.TypeName
+                        </span>
+
+                        @if (activity.Inputs.Any())
+                        {
+                            <span class="activity-inputs">
+                                Inputs: @activity.Inputs.Count
+                            </span>
+                        }
+                    </button>
+                }
+            </div>
+        </aside>
+
+        <main class="designer-main">
+            <div class="wf-toolbar wf-section">
+                <div class="wf-section-title">Arquivo / execução</div>
+
+                <div class="wf-action-grid">
+                    <label class="file-upload-box">
+                        <span>Carregar workflow JSON</span>
+                        <InputFile OnChange="LoadWorkflowFile" accept=".json,application/json" />
+                    </label>
+
+                    <button class="btn btn-primary"
+                            @onclick="ExecuteWorkflowAsync"
+                            disabled="@string.IsNullOrWhiteSpace(RawWorkflowJson)">
+                        Executar JSON atual
+                    </button>
+
+                    <button class="btn btn-outline-primary"
+                            @onclick="StartGenericWorkflowAsync"
+                            disabled="@string.IsNullOrWhiteSpace(RawWorkflowJson)">
+                        Publicar/iniciar genérico
+                    </button>
+
+                    <button class="btn btn-outline-secondary"
+                            @onclick="RegisterCurrentWorkflowJsonAsync"
+                            disabled="@string.IsNullOrWhiteSpace(RawWorkflowJson)">
+                        Salvar JSON em arquivo
+                    </button>
+                </div>
+            </div>
+
+            <div class="wf-summary-grid">
+                <div class="wf-summary-card">
+                    <div class="wf-summary-label">DefinitionId</div>
+                    <div class="wf-summary-value">
+                        @(Workflow?.DefinitionId ?? "-")
+                    </div>
+                </div>
+
+                <div class="wf-summary-card">
+                    <div class="wf-summary-label">Nome</div>
+                    <div class="wf-summary-value">
+                        @(Workflow?.Name ?? Workflow?.RootDisplayName ?? "-")
+                    </div>
+                </div>
+
+                <div class="wf-summary-card">
+                    <div class="wf-summary-label">Nós</div>
+                    <div class="wf-summary-value">
+                        @GraphNodes.Count
+                    </div>
+                </div>
+
+                <div class="wf-summary-card">
+                    <div class="wf-summary-label">Conexões</div>
+                    <div class="wf-summary-value">
+                        @GraphEdges.Count
+                    </div>
+                </div>
+            </div>
+
+            <div class="designer-workspace-grid">
+                <section class="wf-section graph-section">
+                    <div class="wf-section-title-row">
+                        <div>
+                            <div class="wf-section-title">Designer visual</div>
+                            <div class="wf-flow-note">
+                                Arraste os nós para reposicionar. Use “Conectar nós” na toolbar lateral para ligar uma activity na outra.
+                            </div>
+                        </div>
+
+                        @if (IsConnectMode)
+                        {
+                            <span class="connect-badge">Conexão ativa</span>
+                        }
+                    </div>
+
+                    <div class="graph-viewport">
+                        <div class="graph-canvas"
+                             style="@($"width:{CanvasWidth}px;height:{CanvasHeight}px;")"
+                             @onmousemove="OnCanvasMouseMove"
+                             @onmouseup="OnCanvasMouseUp"
+                             @onmouseleave="OnCanvasMouseUp">
+
+                            <svg class="graph-svg"
+                                 width="@CanvasWidth"
+                                 height="@CanvasHeight">
+                                <defs>
+                                    <marker id="arrowhead"
+                                            markerWidth="10"
+                                            markerHeight="7"
+                                            refX="10"
+                                            refY="3.5"
+                                            orient="auto">
+                                        <polygon points="0 0, 10 3.5, 0 7"></polygon>
+                                    </marker>
+                                </defs>
+
+                                @foreach (var edge in GraphEdges)
+                                {
+                                    var source = FindNode(edge.SourceId);
+                                    var target = FindNode(edge.TargetId);
+
+                                    if (source is not null && target is not null)
+                                    {
+                                        var x1 = source.X + NodeWidth;
+                                        var y1 = source.Y + (NodeHeight / 2);
+                                        var x2 = target.X;
+                                        var y2 = target.Y + (NodeHeight / 2);
+                                        var cx1 = x1 + 80;
+                                        var cy1 = y1;
+                                        var cx2 = x2 - 80;
+                                        var cy2 = y2;
+
+                                        <path class="graph-edge-path"
+                                              d="@($"M {x1} {y1} C {cx1} {cy1}, {cx2} {cy2}, {x2} {y2}")"
+                                              marker-end="url(#arrowhead)">
+                                        </path>
+                                    }
+                                }
+                            </svg>
+
+                            @foreach (var edge in GraphEdges)
                             {
-                                <div class="wf-selected-highlight">
-                                    <strong>@item.Key:</strong> @item.Value
+                                var source = FindNode(edge.SourceId);
+                                var target = FindNode(edge.TargetId);
+
+                                if (source is not null && target is not null)
+                                {
+                                    var labelX = (source.X + target.X + NodeWidth) / 2;
+                                    var labelY = (source.Y + target.Y + NodeHeight) / 2;
+
+                                    <div class="graph-edge-label"
+                                         style="@($"left:{labelX}px;top:{labelY}px;")">
+                                        @(string.IsNullOrWhiteSpace(edge.Outcome) ? "Done" : edge.Outcome)
+                                    </div>
+                                }
+                            }
+
+                            @foreach (var node in GraphNodes)
+                            {
+                                var nodeCss = $"graph-node {GetNodeCssClass(node)} {(SelectedNodeId == node.Id ? "selected" : "")} {(_draggingNodeId == node.Id ? "dragging" : "")}";
+
+                                <div class="@nodeCss"
+                                     style="@NodeStyle(node)"
+                                     @onmousedown="(e) => StartDrag(node, e)">
+
+                                    <div class="graph-node-title">@node.Label</div>
+
+                                    <div class="graph-node-type">
+                                        @DisplayOrDash(node.Type)
+                                    </div>
+
+                                    <div class="graph-node-id">
+                                        @node.Id
+                                    </div>
+
+                                    @if (node.Highlights.Any())
+                                    {
+                                        <div class="graph-node-highlights">
+                                            @foreach (var highlight in node.Highlights.Take(3))
+                                            {
+                                                <div class="graph-node-highlight">
+                                                    <span class="graph-node-highlight-key">@highlight.Key:</span>
+                                                    <span class="graph-node-highlight-value">@highlight.Value</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    <div class="graph-node-actions">
+                                        <button class="graph-mini-button"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => SelectNode(node)">
+                                            Selecionar
+                                        </button>
+
+                                        <button class="graph-mini-button"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => HandleNodeClick(node)">
+                                            @(IsConnectMode ? "Usar" : "Conectar")
+                                        </button>
+
+                                        @if (!node.IsRoot)
+                                        {
+                                            <button class="graph-mini-button danger"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => { SelectedNodeId = node.Id; DeleteSelectedNode(); }">
+                                                Excluir
+                                            </button>
+                                        }
+                                    </div>
                                 </div>
                             }
                         </div>
-                    }
-                </div>
-            </div>
-        }
-        <button class="btn btn-primary mb-2"
-                @onclick="StartObjectWorkflowAsync">
-            Iniciar workflow deste objeto
-        </button>
+                    </div>
+                </section>
 
-        <div class="wf-section">
-            <div class="wf-section-title">Grafo interativo</div>
-            <div class="wf-flow-note">
-                Clique em um nó para selecionar. Segure o botão esquerdo do mouse sobre ele para mover.
-            </div>
+                <aside class="designer-properties">
+                    <section class="wf-selected-card">
+                        <div class="wf-section-title">Nó selecionado</div>
 
-            <div class="graph-viewport">
-                <div class="graph-canvas"
-                     style="@($"width:{CanvasWidth}px;height:{CanvasHeight}px;")"
-                     @onmousemove="OnCanvasMouseMove"
-                     @onmouseup="OnCanvasMouseUp"
-                     @onmouseleave="OnCanvasMouseUp">
-
-                    <svg class="graph-svg" width="@CanvasWidth" height="@CanvasHeight">
-                        <defs>
-                            <marker id="arrowhead" markerWidth="10" markerHeight="7"
-                                    refX="9" refY="3.5" orient="auto">
-                                <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
-                            </marker>
-                        </defs>
-
-                        @foreach (var edge in GraphEdges)
+                        @if (SelectedNode is null)
                         {
-                            var source = FindNode(edge.SourceId);
-                            var target = FindNode(edge.TargetId);
-
-                            if (source is null || target is null)
-                                continue;
-
-                            var x1 = source.X + NodeWidth;
-                            var y1 = source.Y + (NodeHeight / 2.0);
-                            var x2 = target.X;
-                            var y2 = target.Y + (NodeHeight / 2.0);
-                            var labelX = (x1 + x2) / 2.0;
-                            var labelY = ((y1 + y2) / 2.0) - 8.0;
-
-                            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
-                                  stroke="#94a3b8" stroke-width="2.5"
-                                  marker-end="url(#arrowhead)" />                                                              
+                            <div class="empty-state">
+                                Nenhum nó selecionado.
+                            </div>
                         }
-                    </svg>
+                        else
+                        {
+                            <div class="wf-selected-name">@SelectedNode.Label</div>
+                            <div class="wf-selected-type">@SelectedNode.Type</div>
+                            <div class="wf-selected-id">@SelectedNode.Id</div>
 
-                    @foreach (var edge in GraphEdges)
-                    {
-                        var source = FindNode(edge.SourceId);
-                        var target = FindNode(edge.TargetId);
-
-                        if (source is null || target is null || string.IsNullOrWhiteSpace(edge.Outcome))
-                            continue;
-
-                        var x1 = source.X + NodeWidth;
-                        var y1 = source.Y + (NodeHeight / 2.0);
-                        var x2 = target.X;
-                        var y2 = target.Y + (NodeHeight / 2.0);
-
-                        var labelX = ((x1 + x2) / 2.0) - 40.0;
-                        var labelY = ((y1 + y2) / 2.0) - 12.0;
-
-                        <div class="graph-edge-label"
-                             style="@($"left:{labelX}px; top:{labelY}px;")">
-                            @edge.Outcome
-                        </div>
-                    }
-
-                    @foreach (var node in GraphNodes)
-                    {
-                        <div class="graph-node @GetNodeCssClass(node) @(SelectedNodeId == node.Id ? "selected" : "") @(_draggingNodeId == node.Id ? "dragging" : "")"
-                             style="@NodeStyle(node)"
-                             @onclick="() => SelectNode(node)"
-                             @onmousedown="(e) => StartDrag(node, e)"
-                             @onmousedown:preventDefault="true">
-
-                            <div class="graph-node-title">@node.Label</div>
-                            <div class="graph-node-type">@node.Type</div>
-                            <div class="graph-node-id">@node.Id</div>
-
-                            @if (node.Highlights.Any())
+                            @if (!SelectedNode.IsRoot)
                             {
-                                <div class="graph-node-highlights">
-                                    @foreach (var item in node.Highlights.Take(3))
+                                <div class="property-group">
+                                    <label class="form-label">Nome visual</label>
+                                    <input class="form-control"
+                                           value="@SelectedNode.Label"
+                                           @onchange="e => UpdateSelectedNodeLabel(e.Value?.ToString())" />
+                                </div>
+                            }
+
+                            @if (SelectedNode.Properties.Any())
+                            {
+                                <div class="property-group">
+                                    <div class="property-title">Inputs / propriedades</div>
+
+                                    @foreach (var property in SelectedNode.Properties.ToList())
                                     {
-                                        <div class="graph-node-highlight">
-                                            <span class="graph-node-highlight-key">@item.Key:</span>
-                                            <span class="graph-node-highlight-value">@item.Value</span>
+                                        <label class="form-label">@property.Key</label>
+                                        <input class="form-control mb-2"
+                                               value="@property.Value"
+                                               @onchange="e => UpdateSelectedNodeProperty(property.Key, e.Value?.ToString())" />
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="empty-state mt-2">
+                                    Este nó não possui inputs simples carregados no catálogo.
+                                </div>
+                            }
+
+                            @if (SelectedNode.Highlights.Any())
+                            {
+                                <div class="wf-selected-highlights">
+                                    @foreach (var highlight in SelectedNode.Highlights)
+                                    {
+                                        <div class="wf-selected-highlight">
+                                            <strong>@highlight.Key:</strong>
+                                            <span>@highlight.Value</span>
                                         </div>
                                     }
                                 </div>
                             }
+                        }
+                    </section>
+
+                    <section class="wf-section">
+                        <div class="wf-section-title">Conexões</div>
+
+                        @if (!GraphEdges.Any())
+                        {
+                            <div class="empty-state">
+                                Nenhuma conexão criada.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="edge-list">
+                                @foreach (var edge in GraphEdges.ToList())
+                                {
+                                    <div class="edge-item">
+                                        <div class="edge-main">
+                                            <strong>@edge.SourceId</strong>
+                                            <span>→</span>
+                                            <strong>@edge.TargetId</strong>
+                                        </div>
+
+                                        <div class="edge-outcome">
+                                            Outcome: @(string.IsNullOrWhiteSpace(edge.Outcome) ? "Done" : edge.Outcome)
+                                        </div>
+
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                @onclick="() => DeleteEdge(edge)">
+                                            Remover
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+                </aside>
+            </div>
+
+            <section class="wf-section">
+                <div class="wf-section-title">Teste de bookmark / signal genérico</div>
+
+                <div class="bookmark-grid">
+                    <div>
+                        <label class="form-label">DefinitionId</label>
+                        <input class="form-control"
+                               @bind="BookmarkTest.DefinitionId"
+                               @bind:event="oninput" />
+                    </div>
+
+                    <div>
+                        <label class="form-label">CorrelationId</label>
+                        <input class="form-control"
+                               @bind="BookmarkTest.CorrelationId"
+                               @bind:event="oninput" />
+                    </div>
+
+                    <div>
+                        <label class="form-label">BookmarkName</label>
+                        <input class="form-control"
+                               @bind="BookmarkTest.BookmarkName"
+                               @bind:event="oninput" />
+                    </div>
+
+                    <div>
+                        <label class="form-label">IdentityKey</label>
+                        <input class="form-control"
+                               @bind="BookmarkTest.IdentityKey"
+                               @bind:event="oninput" />
+                    </div>
+
+                    <div>
+                        <label class="form-label">IdentityValue</label>
+                        <input class="form-control"
+                               @bind="BookmarkTest.IdentityValue"
+                               @bind:event="oninput" />
+                    </div>
+
+                    <div>
+                        <label class="form-label">Field</label>
+                        <input class="form-control"
+                               @bind="BookmarkTest.Field"
+                               @bind:event="oninput" />
+                    </div>
+
+                    <div>
+                        <label class="form-label">Value</label>
+                        <input class="form-control"
+                               @bind="BookmarkTest.Value"
+                               @bind:event="oninput" />
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <button class="btn btn-outline-primary"
+                            @onclick="SendGenericBookmarkSignalAsync"
+                            disabled="@string.IsNullOrWhiteSpace(BookmarkTest.BookmarkName)">
+                        Enviar signal genérico
+                    </button>
+                </div>
+            </section>
+
+            <section class="wf-section">
+                <details open>
+                    <summary class="wf-json-summary">JSON atual gerado/carregado</summary>
+
+                    @if (string.IsNullOrWhiteSpace(FormattedJson))
+                    {
+                        <div class="empty-state mt-2">
+                            Nenhum JSON disponível.
                         </div>
                     }
-                </div>
-            </div>
-        </div>
+                    else
+                    {
+                        <pre class="wf-json-box">@FormattedJson</pre>
+                    }
+                </details>
+            </section>
 
-        <div class="wf-section">
-            <div class="wf-section-title">JSON formatado</div>
-            <details>
-                <summary class="wf-json-summary">Abrir JSON completo</summary>
-                <pre class="wf-json-box">@FormattedJson</pre>
-            </details>
-        </div>
-
-        <div class="object-test-panel">
-            <h5>Teste genérico de bookmark</h5>
-
-            <div class="mb-2">
-                <label class="form-label">DefinitionId</label>
-                <input class="form-control"
-                       @bind="BookmarkTest.DefinitionId"
-                       @bind:event="oninput" />
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">CorrelationId</label>
-                <input class="form-control"
-                       @bind="BookmarkTest.CorrelationId"
-                       @bind:event="oninput" />
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">BookmarkName</label>
-                <input class="form-control"
-                       @bind="BookmarkTest.BookmarkName"
-                       @bind:event="oninput" />
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">IdentityKey</label>
-                <input class="form-control"
-                       @bind="BookmarkTest.IdentityKey"
-                       @bind:event="oninput" />
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">IdentityValue</label>
-                <input class="form-control"
-                       @bind="BookmarkTest.IdentityValue"
-                       @bind:event="oninput" />
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">Field</label>
-                <input class="form-control"
-                       @bind="BookmarkTest.Field"
-                       @bind:event="oninput" />
-            </div>
-
-            <div class="mb-2">
-                <label class="form-label">Value</label>
-                <input class="form-control"
-                       @bind="BookmarkTest.Value"
-                       @bind:event="oninput" />
-            </div>
-
-            <div class="d-flex gap-2 flex-wrap mt-2">
-                <button class="btn btn-sm btn-warning"
-                        @onclick="RegisterCurrentWorkflowJsonAsync">
-                    Registrar JSON
-                </button>
-
-                <button class="btn btn-sm btn-success"
-                        @onclick="StartGenericWorkflowAsync">
-                    Iniciar workflow
-                </button>
-
-                <button type="button"
-                        class="btn btn-sm btn-primary"
-                        @onclick="SendGenericBookmarkSignalAsync">
-                    Enviar sinal
-                </button>
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(ObjectWorkflowStatus))
+            @if (!string.IsNullOrWhiteSpace(ExecutionStateJson))
             {
-                <div class="alert alert-info mt-2">
-                    @ObjectWorkflowStatus
-                </div>
+                <section class="wf-section">
+                    <details open>
+                        <summary class="wf-json-summary">Resultado da execução</summary>
+                        <pre class="wf-json-box">@ExecutionStateJson</pre>
+                    </details>
+                </section>
             }
 
             @if (!string.IsNullOrWhiteSpace(LastObjectWorkflowResponse))
             {
-                <pre class="object-test-response">@LastObjectWorkflowResponse</pre>
+                <section class="wf-section">
+                    <details>
+                        <summary class="wf-json-summary">Última resposta dos endpoints</summary>
+                        <pre class="wf-json-box">@LastObjectWorkflowResponse</pre>
+                    </details>
+                </section>
             }
-        </div>
-    
-    }
+        </main>
+    </div>
+
+    <div class="object-test-panel">
+        <div class="object-test-title">Teste rápido de objeto</div>
+
+        <label class="form-label">Objeto</label>
+        <select class="form-control mb-2"
+                value="@TestObject.ObjectId"
+                @onchange="OnObjectSelected">
+            @foreach (var obj in AvailableObjects)
+            {
+                <option value="@obj.ObjectId">
+                    @obj.ObjectId - @obj.Name
+                </option>
+            }
+        </select>
+
+        <button class="btn btn-sm btn-primary w-100 mb-2"
+                @onclick="StartObjectWorkflowAsync">
+            Iniciar workflow do objeto
+        </button>
+
+        <label class="form-label">Name</label>
+        <input class="form-control mb-2"
+               value="@TestObject.Name"
+               @onchange="OnTestObjectNameChanged" />
+
+        <label class="form-label">Description</label>
+        <input class="form-control mb-2"
+               value="@TestObject.Description"
+               @onchange="OnTestObjectDescriptionChanged" />
+
+        @if (!string.IsNullOrWhiteSpace(ObjectWorkflowStatus))
+        {
+            <div class="object-test-status">
+                @ObjectWorkflowStatus
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(LastObjectWorkflowResponse))
+        {
+            <pre class="object-test-response">@LastObjectWorkflowResponse</pre>
+        }
+    </div>
 </div>
-
-

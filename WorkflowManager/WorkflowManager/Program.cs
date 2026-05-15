@@ -589,6 +589,7 @@ app.MapObjectWorkflowEndpoints();
 app.MapSumWorkflowEndpoints();
 app.MapGenericWorkflowEndpoints();
 app.MapTriggerEndpoints();
+app.MapDesignerEndpoints();
 
 app.Run();
 

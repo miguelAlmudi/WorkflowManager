@@ -272,10 +272,12 @@ namespace WorkflowManager.Components.Pages
                 Id = rootId,
                 Label = rootLabel,
                 Type = rootType,
+                TypeName = Workflow.RootType ?? rootType,
                 Depth = 0,
                 X = CanvasPadding,
                 Y = CanvasPadding,
                 Kind = "root",
+                IsRoot = true,
                 Highlights = Workflow.RootHighlights
             });
 
@@ -286,6 +288,7 @@ namespace WorkflowManager.Components.Pages
                     Id = activity.Id,
                     Label = activity.DisplayName,
                     Type = activity.ShortType,
+                    TypeName = activity.Type,
                     Depth = Math.Max(activity.Depth, 1),
                     Kind = ClassifyNodeKind(activity.ShortType),
                     Highlights = activity.Highlights
@@ -335,6 +338,312 @@ namespace WorkflowManager.Components.Pages
             RecalculateCanvasSize();
         }
 
+        private void NewDesignerWorkflow()
+        {
+            ClearState();
+
+            Workflow = new WorkflowViewModel
+            {
+                WorkflowId = Guid.NewGuid().ToString("N"),
+                DefinitionId = $"VisualWorkflow-{DateTime.Now:yyyyMMddHHmmss}",
+                Name = "Workflow Visual",
+                RootId = "Workflow1",
+                RootType = "Elsa.Flowchart",
+                RootDisplayName = "Workflow Visual"
+            };
+
+            GraphNodes.Add(new GraphNode
+            {
+                Id = "Workflow1",
+                Label = "Workflow Visual",
+                Type = "Flowchart",
+                TypeName = "Elsa.Flowchart",
+                Kind = "root",
+                IsRoot = true,
+                X = CanvasPadding,
+                Y = CanvasPadding
+            });
+
+            SelectedNodeId = "Workflow1";
+            RecalculateCanvasSize();
+            SyncDesignerJsonFromGraph();
+
+            HasError = false;
+            StatusMessage = "Novo workflow visual criado.";
+        }
+
+        private void AddActivityToCanvas(ActivityCatalogItem activity)
+        {
+            if (Workflow is null || !GraphNodes.Any())
+                NewDesignerWorkflow();
+
+            var id = GenerateNodeId(activity.DisplayName ?? activity.Name ?? "Activity");
+
+            var x = CanvasPadding + 320;
+            var y = CanvasPadding + GraphNodes.Count * 80;
+
+            var node = new GraphNode
+            {
+                Id = id,
+                Label = activity.DisplayName ?? activity.Name ?? activity.TypeName,
+                Type = ShortType(activity.TypeName) ?? activity.TypeName,
+                TypeName = activity.TypeName,
+                Kind = ClassifyNodeKind(activity.TypeName),
+                X = x,
+                Y = y,
+                Depth = 1,
+                Highlights = new List<ActivityHighlight>
+        {
+            new ActivityHighlight { Key = "Source", Value = activity.Source },
+            new ActivityHighlight { Key = "Type", Value = activity.TypeName }
+        }
+            };
+
+            foreach (var input in activity.Inputs)
+                node.Properties[input.Name] = "";
+
+            GraphNodes.Add(node);
+            SelectedNodeId = node.Id;
+
+            RecalculateCanvasSize();
+            SyncDesignerJsonFromGraph();
+
+            StatusMessage = $"Activity adicionada: {node.Label}";
+            HasError = false;
+        }
+
+        private string GenerateNodeId(string baseName)
+        {
+            var safe = new string(baseName
+                .Where(char.IsLetterOrDigit)
+                .ToArray());
+
+            if (string.IsNullOrWhiteSpace(safe))
+                safe = "Activity";
+
+            var index = GraphNodes.Count(x =>
+                x.Id.StartsWith(safe, StringComparison.OrdinalIgnoreCase)) + 1;
+
+            return $"{safe}{index}";
+        }
+
+        private void ToggleConnectMode()
+        {
+            IsConnectMode = !IsConnectMode;
+            PendingConnectionSourceId = null;
+
+            StatusMessage = IsConnectMode
+                ? "Modo conexão ativado. Selecione o nó de origem e depois o nó de destino."
+                : "Modo conexão desativado.";
+        }
+
+        private void HandleNodeClick(GraphNode node)
+        {
+            SelectNode(node);
+
+            if (!IsConnectMode)
+                return;
+
+            if (node.IsRoot)
+            {
+                StatusMessage = "O nó root não deve ser usado como activity de conexão neste MVP.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(PendingConnectionSourceId))
+            {
+                PendingConnectionSourceId = node.Id;
+                StatusMessage = $"Origem selecionada: {node.Label}. Agora selecione o destino.";
+                return;
+            }
+
+            if (PendingConnectionSourceId == node.Id)
+            {
+                PendingConnectionSourceId = null;
+                StatusMessage = "Conexão cancelada: origem e destino eram iguais.";
+                return;
+            }
+
+            if (GraphEdges.Any(x =>
+                    x.SourceId == PendingConnectionSourceId &&
+                    x.TargetId == node.Id))
+            {
+                StatusMessage = "Essa conexão já existe.";
+                PendingConnectionSourceId = null;
+                return;
+            }
+
+            GraphEdges.Add(new GraphEdge
+            {
+                SourceId = PendingConnectionSourceId,
+                TargetId = node.Id,
+                Outcome = NewConnectionOutcome
+            });
+
+            PendingConnectionSourceId = null;
+            SyncDesignerJsonFromGraph();
+
+            StatusMessage = "Conexão criada.";
+        }
+
+        private void DeleteSelectedNode()
+        {
+            if (string.IsNullOrWhiteSpace(SelectedNodeId))
+                return;
+
+            var node = GraphNodes.FirstOrDefault(x => x.Id == SelectedNodeId);
+
+            if (node is null)
+                return;
+
+            if (node.IsRoot)
+            {
+                StatusMessage = "O nó root não pode ser deletado.";
+                return;
+            }
+
+            GraphNodes.Remove(node);
+
+            GraphEdges.RemoveAll(x =>
+                x.SourceId == node.Id ||
+                x.TargetId == node.Id);
+
+            SelectedNodeId = GraphNodes.FirstOrDefault()?.Id;
+
+            RecalculateCanvasSize();
+            SyncDesignerJsonFromGraph();
+
+            StatusMessage = $"Nó deletado: {node.Label}";
+        }
+
+        private void DeleteEdge(GraphEdge edge)
+        {
+            GraphEdges.Remove(edge);
+            SyncDesignerJsonFromGraph();
+            StatusMessage = "Conexão removida.";
+        }
+
+        private void SyncDesignerJsonFromGraph()
+        {
+            if (!GraphNodes.Any())
+            {
+                RawWorkflowJson = null;
+                FormattedJson = null;
+                return;
+            }
+
+            var root = GraphNodes.FirstOrDefault(x => x.IsRoot) ?? GraphNodes.First();
+
+            var activityNodes = GraphNodes
+                .Where(x => !x.IsRoot)
+                .ToList();
+
+            var activities = activityNodes
+                .Select(node =>
+                {
+                    var activity = new Dictionary<string, object?>
+                    {
+                        ["id"] = node.Id,
+                        ["type"] = node.TypeName,
+                        ["name"] = node.Label
+                    };
+
+                    foreach (var property in node.Properties)
+                    {
+                        if (!string.IsNullOrWhiteSpace(property.Value))
+                            activity[property.Key] = property.Value;
+                    }
+
+                    return activity;
+                })
+                .ToArray();
+
+            var connections = GraphEdges
+                .Where(edge =>
+                    activityNodes.Any(n => n.Id == edge.SourceId) &&
+                    activityNodes.Any(n => n.Id == edge.TargetId))
+                .Select(edge => new Dictionary<string, object?>
+                {
+                    ["sourceActivityId"] = edge.SourceId,
+                    ["targetActivityId"] = edge.TargetId,
+                    ["outcome"] = string.IsNullOrWhiteSpace(edge.Outcome) ? "Done" : edge.Outcome
+                })
+                .ToArray();
+
+            var workflowDefinitionId =
+                Workflow?.DefinitionId ??
+                $"VisualWorkflow-{DateTime.Now:yyyyMMddHHmmss}";
+
+            var workflowJson = new Dictionary<string, object?>
+            {
+                ["definitionId"] = workflowDefinitionId,
+                ["name"] = Workflow?.Name ?? "Workflow Visual",
+                ["root"] = new Dictionary<string, object?>
+                {
+                    ["id"] = root.Id,
+                    ["type"] = root.TypeName,
+                    ["name"] = root.Label,
+                    ["activities"] = activities,
+                    ["connections"] = connections
+                }
+            };
+
+            RawWorkflowJson = JsonSerializer.Serialize(
+                workflowJson,
+                new JsonSerializerOptions { WriteIndented = true });
+
+            FormattedJson = RawWorkflowJson;
+        }
+
+        private void UpdateSelectedNodeLabel(string? value)
+        {
+            var node = SelectedNode;
+
+            if (node is null)
+                return;
+
+            var newLabel = string.IsNullOrWhiteSpace(value)
+                ? node.Type
+                : value.Trim();
+
+            node.Label = newLabel;
+
+            if (node.IsRoot && Workflow is not null)
+            {
+                Workflow.RootDisplayName = newLabel;
+                Workflow.Name = newLabel;
+            }
+
+            SyncDesignerJsonFromGraph();
+
+            StatusMessage = $"Nome do nó atualizado: {newLabel}";
+            HasError = false;
+        }
+
+        private void UpdateSelectedNodeProperty(string key, string? value)
+        {
+            var node = SelectedNode;
+
+            if (node is null)
+                return;
+
+            node.Properties[key] = value;
+
+            node.Highlights.RemoveAll(x =>
+                x.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                node.Highlights.Add(new ActivityHighlight
+                {
+                    Key = key,
+                    Value = value
+                });
+            }
+
+            SyncDesignerJsonFromGraph();
+        }
+
         private void RecalculateCanvasSize()
         {
             if (!GraphNodes.Any())
@@ -346,6 +655,30 @@ namespace WorkflowManager.Components.Pages
 
             CanvasWidth = Math.Max(1600, GraphNodes.Max(x => x.X) + NodeWidth + CanvasPadding);
             CanvasHeight = Math.Max(900, GraphNodes.Max(x => x.Y) + NodeHeight + CanvasPadding);
+        }
+
+        protected override async Task OnInitializedAsync()
+        {
+            await LoadActivityCatalogAsync();
+        }
+
+        private async Task LoadActivityCatalogAsync()
+        {
+            try
+            {
+                var response = await Http.GetFromJsonAsync<ActivityCatalogResponse>(
+                    "api/designer/activities");
+
+                ActivityCatalog = response?.Activities ?? new();
+
+                StatusMessage = $"Catálogo carregado: {ActivityCatalog.Count} activities disponíveis.";
+                HasError = false;
+            }
+            catch (Exception ex)
+            {
+                HasError = true;
+                StatusMessage = $"Erro ao carregar catálogo de activities: {ex.Message}";
+            }
         }
 
         private void ResetLayout()
@@ -1255,6 +1588,22 @@ namespace WorkflowManager.Components.Pages
             CanvasHeight = 900;
         }
 
+        private List<ActivityCatalogItem> ActivityCatalog { get; set; } = new();
+        private string ActivitySearchText { get; set; } = "";
+        private string? PendingConnectionSourceId { get; set; }
+        private bool IsConnectMode { get; set; }
+        private string NewConnectionOutcome { get; set; } = "Done";
+
+        private IEnumerable<ActivityCatalogItem> FilteredActivityCatalog =>
+            ActivityCatalog
+                .Where(x =>
+                    string.IsNullOrWhiteSpace(ActivitySearchText) ||
+                    x.DisplayName.Contains(ActivitySearchText, StringComparison.OrdinalIgnoreCase) ||
+                    x.TypeName.Contains(ActivitySearchText, StringComparison.OrdinalIgnoreCase) ||
+                    x.Source.Contains(ActivitySearchText, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(x => x.Source)
+                .ThenBy(x => x.DisplayName);
+
         private List<TestObjectViewModel> AvailableObjects { get; set; } = new()
         {
             new TestObjectViewModel
@@ -1326,6 +1675,32 @@ namespace WorkflowManager.Components.Pages
             public List<ActivityHighlight> Highlights { get; set; } = new();
         }
 
+        private sealed class ActivityCatalogResponse
+        {
+            public int Count { get; set; }
+            public List<ActivityCatalogItem> Activities { get; set; } = new();
+        }
+
+        private sealed class ActivityCatalogItem
+        {
+            public string TypeName { get; set; } = "";
+            public int Version { get; set; }
+            public string? Name { get; set; }
+            public string? DisplayName { get; set; }
+            public string? Category { get; set; }
+            public string? Namespace { get; set; }
+            public string Source { get; set; } = "";
+            public string AssemblyName { get; set; } = "";
+            public List<ActivityCatalogProperty> Inputs { get; set; } = new();
+            public List<ActivityCatalogProperty> Outputs { get; set; } = new();
+        }
+
+        private sealed class ActivityCatalogProperty
+        {
+            public string Name { get; set; } = "";
+            public string PropertyType { get; set; } = "";
+        }
+
         private sealed class ActivityHighlight
         {
             public string Key { get; set; } = "";
@@ -1346,10 +1721,13 @@ namespace WorkflowManager.Components.Pages
             public string Id { get; set; } = "";
             public string Label { get; set; } = "";
             public string Type { get; set; } = "";
+            public string TypeName { get; set; } = "";
             public int Depth { get; set; }
             public string Kind { get; set; } = "generic";
             public double X { get; set; }
             public double Y { get; set; }
+            public bool IsRoot { get; set; }
+            public Dictionary<string, string?> Properties { get; set; } = new();
             public List<ActivityHighlight> Highlights { get; set; } = new();
         }
 
