@@ -595,6 +595,33 @@ namespace WorkflowManager.Components.Pages
             FormattedJson = RawWorkflowJson;
         }
 
+        private Task SendNameObjectSignalAsync()
+        {
+            return SendObjectFieldSignalAsync("name", TestObject.Name);
+        }
+
+        private Task SendDescriptionObjectSignalAsync()
+        {
+            return SendObjectFieldSignalAsync("description", TestObject.Description);
+        }
+
+        private void OnObjectSelectedFromBind()
+        {
+            if (string.IsNullOrWhiteSpace(TestObject.ObjectId))
+                return;
+
+            var selectedObject = AvailableObjects
+                .FirstOrDefault(x => x.ObjectId == TestObject.ObjectId);
+
+            if (selectedObject is null)
+                return;
+
+            TestObject.Name = selectedObject.Name;
+            TestObject.Description = selectedObject.Description;
+
+            ObjectWorkflowStatus = $"Objeto selecionado: {TestObject.ObjectId}";
+        }
+
         private void UpdateSelectedNodeLabel(string? value)
         {
             var node = SelectedNode;
@@ -660,6 +687,7 @@ namespace WorkflowManager.Components.Pages
         protected override async Task OnInitializedAsync()
         {
             await LoadActivityCatalogAsync();
+            await LoadAvailableObjectsAsync();
         }
 
         private async Task LoadActivityCatalogAsync()
@@ -765,6 +793,38 @@ namespace WorkflowManager.Components.Pages
             catch (Exception ex)
             {
                 ObjectWorkflowStatus = $"Erro: {ex.Message}";
+            }
+        }
+
+        private async Task LoadAvailableObjectsAsync()
+        {
+            try
+            {
+                var objects = await Http.GetFromJsonAsync<List<TestObjectViewModel>>(
+                    "api/designer/objects");
+
+                if (objects is null || !objects.Any())
+                {
+                    ObjectWorkflowStatus = "Nenhum objeto encontrado.";
+                    return;
+                }
+
+                AvailableObjects = objects;
+
+                var first = AvailableObjects.First();
+
+                TestObject = new TestObjectViewModel
+                {
+                    ObjectId = first.ObjectId,
+                    Name = first.Name,
+                    Description = first.Description
+                };
+
+                ObjectWorkflowStatus = $"{AvailableObjects.Count} objeto(s) carregado(s).";
+            }
+            catch (Exception ex)
+            {
+                ObjectWorkflowStatus = $"Erro ao carregar objetos: {ex.Message}";
             }
         }
 
@@ -1604,27 +1664,7 @@ namespace WorkflowManager.Components.Pages
                 .OrderBy(x => x.Source)
                 .ThenBy(x => x.DisplayName);
 
-        private List<TestObjectViewModel> AvailableObjects { get; set; } = new()
-        {
-            new TestObjectViewModel
-            {
-                ObjectId = "objeto-001",
-                Name = "Motor",
-                Description = "Motor principal"
-            },
-            new TestObjectViewModel
-            {
-                ObjectId = "objeto-002",
-                Name = "Sensor",
-                Description = "Sensor de temperatura"
-            },
-            new TestObjectViewModel
-            {
-                ObjectId = "objeto-003",
-                Name = "Controlador",
-                Description = "Controlador eletrônico"
-            }
-        };
+        private List<TestObjectViewModel> AvailableObjects { get; set; } = new();
 
         private void OnObjectSelected(ChangeEventArgs e)
         {
@@ -1648,6 +1688,8 @@ namespace WorkflowManager.Components.Pages
 
             ObjectWorkflowStatus = $"Objeto selecionado: {TestObject.ObjectId}";
         }
+
+        
 
         private sealed class WorkflowViewModel
         {

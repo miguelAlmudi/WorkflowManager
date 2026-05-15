@@ -512,14 +512,14 @@
             }
         </main>
     </div>
-
+    <!--
     <div class="object-test-panel">
         <div class="object-test-title">Teste rápido de objeto</div>
 
         <label class="form-label">Objeto</label>
         <select class="form-control mb-2"
-                value="@TestObject.ObjectId"
-                @onchange="OnObjectSelected">
+                @bind="TestObject.ObjectId"
+                @bind:after="OnObjectSelectedFromBind">
             @foreach (var obj in AvailableObjects)
             {
                 <option value="@obj.ObjectId">
@@ -535,13 +535,23 @@
 
         <label class="form-label">Name</label>
         <input class="form-control mb-2"
-               value="@TestObject.Name"
-               @onchange="OnTestObjectNameChanged" />
+               @bind="TestObject.Name"
+               @bind:event="oninput" />
+
+        <button class="btn btn-sm btn-outline-primary w-100 mb-2"
+                @onclick="SendNameObjectSignalAsync">
+            Enviar alteração de name
+        </button>
 
         <label class="form-label">Description</label>
         <input class="form-control mb-2"
-               value="@TestObject.Description"
-               @onchange="OnTestObjectDescriptionChanged" />
+               @bind="TestObject.Description"
+               @bind:event="oninput" />
+
+        <button class="btn btn-sm btn-outline-primary w-100 mb-2"
+                @onclick="SendDescriptionObjectSignalAsync">
+            Enviar alteração de description
+        </button>
 
         @if (!string.IsNullOrWhiteSpace(ObjectWorkflowStatus))
         {
@@ -555,4 +565,5 @@
             <pre class="object-test-response">@LastObjectWorkflowResponse</pre>
         }
     </div>
+    -->
 </div>
