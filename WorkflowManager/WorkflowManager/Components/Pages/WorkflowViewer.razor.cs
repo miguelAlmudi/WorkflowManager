@@ -40,7 +40,13 @@ namespace WorkflowManager.Components.Pages
 
         private string? RawWorkflowJson;
         private string? ExecutionStateJson;
+        public string TypeName { get; set; } = "";
 
+        private ActivityCatalogItem? SelectedActivityCatalogItem =>
+    SelectedNode is null
+        ? null
+        : ActivityCatalog.FirstOrDefault(x =>
+            x.TypeName.Equals(SelectedNode.TypeName, StringComparison.OrdinalIgnoreCase));
         private GraphNode? SelectedNode => GraphNodes.FirstOrDefault(x => x.Id == SelectedNodeId);
 
         private async Task LoadWorkflowFile(InputFileChangeEventArgs e)

@@ -359,6 +359,27 @@
                                 </div>
                             }
 
+                            @if (SelectedActivityCatalogItem?.Outputs.Any() == true)
+                            {
+                                <div class="property-group">
+                                    <div class="property-title">Outputs</div>
+
+                                    @foreach (var output in SelectedActivityCatalogItem.Outputs)
+                                    {
+                                        <div class="output-item">
+                                            <div class="output-name">@output.Name</div>
+                                            <div class="output-type">@output.PropertyType</div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else if (SelectedNode is not null && !SelectedNode.IsRoot)
+                            {
+                                <div class="empty-state mt-2">
+                                    Esta activity não possui outputs detectados no catálogo.
+                                </div>
+                            }
+
                             @if (SelectedNode.Highlights.Any())
                             {
                                 <div class="wf-selected-highlights">

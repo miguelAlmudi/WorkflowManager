@@ -618,6 +618,25 @@
     border-radius: 8px;
 }
 
+.output-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.output-name {
+    font-weight: 800;
+    color: #334155;
+}
+
+.output-type {
+    font-size: 0.78rem;
+    color: #64748b;
+    word-break: break-word;
+}
+
 @media (max-width: 1300px) {
     .designer-workspace-grid {
         grid-template-columns: 1fr;
